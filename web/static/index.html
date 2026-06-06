@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FUTMANAGER</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <!-- Tela de saves -->
+  <div id="saves" class="overlay hidden">
+    <div class="nc-box" style="width:440px">
+      <h1 class="logo">⚽ FUTMANAGER</h1>
+      <p class="nc-sub">Jogos salvos</p>
+      <div id="saves-list" class="saves-list"></div>
+      <button id="saves-new" class="btn-primary">＋ Novo Jogo</button>
+    </div>
+  </div>
+
+  <!-- Tela de nova carreira -->
+  <div id="newcareer" class="overlay hidden">
+    <div class="nc-box">
+      <h1 class="logo">⚽ FUTMANAGER</h1>
+      <p class="nc-sub">Novo jogo — escolha seu clube</p>
+      <div class="nc-step">
+        <label>Liga</label>
+        <select id="nc-league"></select>
+      </div>
+      <div class="nc-step">
+        <label>Clube</label>
+        <select id="nc-club"></select>
+      </div>
+      <div class="nc-step">
+        <label>Seu nome de técnico</label>
+        <input id="nc-name" placeholder="ex: Tite" value="Técnico">
+      </div>
+      <button id="nc-start" class="btn-primary">Iniciar Carreira ▶</button>
+    </div>
+  </div>
+
+  <!-- Hub principal -->
+  <div id="hub" class="hidden">
+    <header class="topbar">
+      <span class="logo-sm">⚽ FUTMANAGER</span>
+      <span id="top-coach" class="top-coach"></span>
+      <span id="top-season" class="top-season"></span>
+      <button id="top-saves" class="top-saves">📂 Trocar jogo</button>
+    </header>
+
+    <div class="club-banner" id="club-banner">
+      <div class="banner-left">
+        <div class="club-crest" id="club-crest"></div>
+        <div>
+          <div class="club-name" id="club-name"></div>
+          <div class="club-prestige" id="club-prestige"></div>
+        </div>
+      </div>
+      <div class="banner-stats">
+        <div class="stat"><span class="stat-label">Caixa</span><span class="stat-val money" id="st-money"></span></div>
+        <div class="stat"><span class="stat-label">Títulos</span><span class="stat-val gold" id="st-titles"></span></div>
+        <div class="stat"><span class="stat-label">Reputação</span><span class="stat-val" id="st-rep"></span></div>
+        <div class="stat"><span class="stat-label">Meta</span><span class="stat-val" id="st-meta"></span></div>
+      </div>
+    </div>
+
+    <div class="layout">
+      <nav class="sidebar">
+        <button class="nav active" data-view="elenco">👥 Elenco</button>
+        <button class="nav" data-view="escalacao">📋 Escalação</button>
+        <button class="nav" data-view="mercado">💰 Mercado</button>
+        <button class="nav" data-view="jogar">▶️ Jogar Temporada</button>
+        <button class="nav" data-view="tabela">📊 Classificação</button>
+        <button class="nav" data-view="buscar">🔍 Buscar Time</button>
+        <button class="nav" data-view="estadio">🎟️ Estádio &amp; CT</button>
+        <button class="nav" data-view="scout">⭐ Scout</button>
+        <button class="nav" data-view="historico">📜 Histórico</button>
+      </nav>
+
+      <main class="panel" id="panel">
+        <!-- conteúdo dinâmico -->
+      </main>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

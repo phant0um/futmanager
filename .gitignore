@@ -1,0 +1,24 @@
+# Build / empacotamento
+build/
+dist/
+*.spec.bak
+__pycache__/
+*.pyc
+*.pyo
+
+# Saves de jogo (mundo por jogador)
+data/saves/
+
+# Dados scraped / clonados (regeneráveis via scripts/rebuild_db.sh)
+data/sources/
+
+# Backups locais (nomes reais — NÃO publicar)
+data/*.realnames.bak
+*.realnames.bak
+
+# macOS
+.DS_Store
+
+# Venv
+.venv/
+venv/

@@ -1,0 +1,3 @@
+# Runtime: zero dependências externas (stdlib apenas)
+# Build:
+pyinstaller>=6.0
