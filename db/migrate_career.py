@@ -334,10 +334,10 @@ def assign_wages_contracts(conn: sqlite3.Connection, current_year: int):
         "SELECT id, value, overall, age FROM players WHERE COALESCE(wage,0)=0 AND retired=0"
     ).fetchall()
     for pid, value, ovr, age in rows:
-        value = value or 1_000_000
+        value = value or 5_500_000  # Base value in BRL (€1M × 5.5)
         # Salário anual ~10-15% do valor (ratio típico futebol)
         wage = int(value * random.uniform(0.10, 0.15))
-        wage = max(50_000, wage)  # piso
+        wage = max(275_000, wage)  # piso em BRL (€50k × 5.5)
         # Contrato: jovens contratos mais longos, veteranos curtos
         age = age or 25
         if age <= 23:

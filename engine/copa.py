@@ -13,10 +13,11 @@ STAGES = [("Oitavas de Final", 16), ("Quartas de Final", 8),
           ("Semifinal", 4), ("Final", 2)]
 
 # Config por competição: nome + rodadas-gatilho (após qual rodada cada fase joga)
+# Valores em BRL (Real brasileiro)
 COMPS = {
-    "br":  {"name": "Copa do Brasil",  "triggers": [4, 13, 22, 31], "prize": 30_000_000},
-    "lib": {"name": "Libertadores",    "triggers": [6, 15, 24, 33], "prize": 45_000_000},
-    "sul": {"name": "Sul-Americana",   "triggers": [8, 17, 26, 35], "prize": 22_000_000},
+    "br":  {"name": "Copa do Brasil",  "triggers": [4, 13, 22, 31], "prize": 165_000_000},
+    "lib": {"name": "Libertadores",    "triggers": [6, 15, 24, 33], "prize": 248_000_000},
+    "sul": {"name": "Sul-Americana",   "triggers": [8, 17, 26, 35], "prize": 121_000_000},
 }
 ALL_COMPS = ["br", "lib", "sul"]
 

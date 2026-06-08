@@ -42,8 +42,8 @@ def get_active_career(conn):
 
 
 def _money_for_prestige(prestige: int) -> int:
-    """Orçamento inicial proporcional ao prestígio do clube."""
-    return int((prestige / 100) ** 3 * 150_000_000)
+    """Orçamento inicial proporcional ao prestígio do clube (em BRL)."""
+    return int((prestige / 100) ** 3 * 825_000_000)  # €150M × 5.5
 
 
 # ─── Novo jogo ───────────────────────────────────────────────────────────────

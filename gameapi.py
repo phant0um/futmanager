@@ -41,12 +41,13 @@ def club_hex(name: str) -> tuple[str, str]:
 
 
 def fmt_money(v: int) -> str:
+    """Formata valores monetários em BRL (Real brasileiro)."""
     v = v or 0
     if abs(v) >= 1_000_000:
-        return f"€{v/1_000_000:.1f}M"
+        return f"R$ {v/1_000_000:.1f}M"
     if abs(v) >= 1_000:
-        return f"€{v/1_000:.0f}K"
-    return f"€{v}"
+        return f"R$ {v/1_000:.0f}K"
+    return f"R$ {v}"
 
 
 # ─── Estado / dados ──────────────────────────────────────────────────────────
@@ -676,7 +677,7 @@ def _web_copa(conn, career, comp, st):
             out["won"] = True
     else:
         if any(w == cid for _, w in winners):
-            conn.execute("UPDATE career SET money=money+4000000 WHERE id=?", (career["id"],))
+            conn.execute("UPDATE career SET money=money+22000000 WHERE id=?", (career["id"],))
             out["advanced"] = True
         elif COPA.player_tie(conn, career, comp, st) is None and cid in ids:
             out["eliminated"] = True
@@ -712,11 +713,11 @@ def play_estadual_live(conn):
     matchdays, res = run_estadual_live(state, clubs, watch_club_id=cid)
     prize = 0
     if res.player_champion:
-        prize = 8_000_000
+        prize = 44_000_000  # €8M × 5.5
         conn.execute("UPDATE career SET money=money+?, reputation=MIN(100,reputation+4), titles=titles+1 WHERE id=?",
                      (prize, career["id"]))
     elif res.player_stage in ("Final", "Semifinais"):
-        prize = 2_500_000
+        prize = 13_750_000  # €2.5M × 5.5
         conn.execute("UPDATE career SET money=money+? WHERE id=?", (prize, career["id"]))
     conn.execute("UPDATE career SET estadual_year=? WHERE id=?", (career["season_year"], career["id"]))
     _save_estadual_data(conn, career, _STATE_NAMES.get(state, f"Estadual {state}"), res)
@@ -792,7 +793,7 @@ def play_copa_live(conn):
             out["won"] = True
     else:
         if any(w == cid for _, w in winners):
-            conn.execute("UPDATE career SET money=money+4000000 WHERE id=?", (career["id"],))
+            conn.execute("UPDATE career SET money=money+22000000 WHERE id=?", (career["id"],))
             out["advanced"] = True
         elif COPA.player_tie(conn, career, comp, st) is None and cid in ids:
             out["eliminated"] = True
@@ -812,11 +813,11 @@ def _web_estadual(conn, career):
     res = run_estadual(state, clubs, watch_club_id=cid)
     prize = 0
     if res.player_champion:
-        prize = 8_000_000
+        prize = 44_000_000  # €8M × 5.5
         conn.execute("UPDATE career SET money=money+?, reputation=MIN(100,reputation+4), titles=titles+1 WHERE id=?",
                      (prize, career["id"]))
     elif res.player_stage in ("Final", "Semifinais"):
-        prize = 2_500_000
+        prize = 13_750_000  # €2.5M × 5.5
         conn.execute("UPDATE career SET money=money+? WHERE id=?", (prize, career["id"]))
     conn.execute("UPDATE career SET estadual_year=? WHERE id=?", (career["season_year"], career["id"]))
     _save_estadual_data(conn, career, _STATE_NAMES.get(state, f"Estadual {state}"), res)
@@ -1038,7 +1039,7 @@ def api_stadium(c):
             "fill": round(fill * 100), "public": int((club["capacity"] or 0) * fill),
             "revenue": rev, "revenue_fmt": fmt_money(rev),
             "training": tl, "training_cost": tl * 2_500_000,
-            "training_cost_fmt": fmt_money(tl * 2_500_000),
+            "training_cost_fmt": fmt_money(tl * 13_750_000),  # €2.5M × 5.5
             "training_focus": car["training_focus"] or "geral",
             "training_focuses": ["geral", "fisico", "tecnico", "finalizacao"]}
 

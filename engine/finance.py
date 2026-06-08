@@ -7,13 +7,14 @@ from __future__ import annotations
 import sqlite3
 
 # Base de receita por temporada (patrocínio + TV), escalado por prestígio
-SPONSOR_BASE = 80_000_000    # prestígio 100 → ~80M (estádio agora é linha separada)
-PRIZE_POOL = 35_000_000      # distribuído por posição na liga
-TITLE_BONUS = 25_000_000
+# Todos os valores em BRL (Real brasileiro)
+SPONSOR_BASE = 440_000_000    # prestígio 100 → ~440M (€80M × 5.5)
+PRIZE_POOL = 193_000_000      # distribuído por posição na liga (€35M × 5.5)
+TITLE_BONUS = 138_000_000     # (€25M × 5.5)
 
 # Bilheteria
 HOME_GAMES = 19              # jogos em casa por temporada (liga 20 times)
-TICKET_BASE = 35             # € médio por ingresso (escala com prestígio)
+TICKET_BASE = 193            # R$ médio por ingresso (escala com prestígio) (€35 × 5.5)
 
 # Multa por expulsão (cartão vermelho): fração do salário ANUAL por expulsão
 RED_CARD_FINE_PCT = 0.04
