@@ -1302,6 +1302,10 @@ class App(tk.Tk):
         self.en_movr = tk.Entry(f1, bg=BG2, fg=TXT, insertbackground=TXT, font=(F, 12),
                                 relief="flat", width=4)
         self.en_movr.pack(side="left", padx=(4, 12), ipady=3)
+        tk.Label(f1, text="Valor até (M€):", fg=DIM, bg=BG, font=(F, 11)).pack(side="left")
+        self.en_mvalue = tk.Entry(f1, bg=BG2, fg=TXT, insertbackground=TXT, font=(F, 12),
+                                  relief="flat", width=6)
+        self.en_mvalue.pack(side="left", padx=(4, 12), ipady=3)
         # ── linha 2: checkboxes + ação
         f2 = tk.Frame(self.panel, bg=BG)
         f2.pack(fill="x", padx=24, pady=(6, 4))
@@ -1343,11 +1347,13 @@ class App(tk.Tk):
     def _load_market(self):
         pos = self.cb_mpos.get()
         nat = self.cb_mnat.get()
+        value_m = self._int_or(self.en_mvalue, 0)
         kw = dict(
             position=None if pos == "Todas" else pos,
             nationality=None if nat == "Todas" else nat,
             max_age=self._int_or(self.en_mage, 99),
             min_ovr=self._int_or(self.en_movr, 0),
+            max_price=value_m * 1_000_000 if value_m > 0 else None,
             only_transfer=self.var_transfer.get(),
             only_loan=self.var_loan.get(),
         )
