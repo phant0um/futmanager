@@ -114,6 +114,7 @@ def migrate(conn: sqlite3.Connection, current_year: int = 2026):
     _add_col(conn, "career", "estadual_year", "INTEGER DEFAULT 0")  # última temp. com estadual disputado
     _add_col(conn, "career", "estadual_data", "TEXT")  # JSON: grupos/campeão do estadual da temp. atual
     _add_col(conn, "career", "declined_offers", "TEXT")  # JSON: [[player_id, club_id, season_year], ...] propostas recusadas
+    _add_col(conn, "career", "notified_offers", "TEXT")  # JSON: [[player_id, club_id, season_year], ...] já avisadas na inbox (evita repost a cada rodada)
     # Inbox narrativa — cimento que reúne avisos do board, relatórios de
     # scout, propostas etc. num só lugar persistente e revisitável
     conn.execute("""

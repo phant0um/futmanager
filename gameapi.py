@@ -517,6 +517,7 @@ def _web_league_round(conn, career):
     conn.execute("UPDATE career SET current_round=?, updated_at=datetime('now') WHERE id=?",
                  (cr + 1, career["id"]))
     conn.commit()
+    _notify_incoming_offers(conn, get_active_career(conn))
     tab = CAL.standings(conn, career)
     pos = next((i for i, s in enumerate(tab, 1) if s.club_id == cid), None)
     return {"ok": True, "kind": "league", "round": cr + 1, "n": nr, "your": your,
@@ -605,6 +606,7 @@ def play_round_live(conn):
     conn.execute("UPDATE career SET current_round=?, updated_at=datetime('now') WHERE id=?",
                  (cr + 1, career["id"]))
     conn.commit()
+    _notify_incoming_offers(conn, get_active_career(conn))
     # ordena: jogo do humano primeiro
     matches.sort(key=lambda m: 0 if m["is_player"] else 1)
     return {"ok": True, "kind": "round_live", "round": cr + 1, "n": nr,
@@ -1103,6 +1105,42 @@ def api_market(c, position=None, max_price=None, min_ovr=0, max_ovr=99,
                     "flags": "".join(flags)})
     return {"ok": True, "players": out, "count": len(out),
             "money": car["money"], "money_fmt": fmt_money(car["money"])}
+
+
+def _notify_incoming_offers(conn, career):
+    """Posta na inbox as propostas NOVAS de assédio pelo seu elenco —
+    kind='market'. `incoming_offers` é determinístico por (carreira,
+    temporada, rodada) mas troca o clube pretendente a cada rodada pro
+    mesmo jogador (RNG escolhe novo comprador entre candidatos toda vez)
+    — dedup por (jogador, clube) não resolveria, ia "novo" toda rodada.
+    Notifica 1x por JOGADOR por temporada ("há interesse em X" — o clube
+    específico flutua, o que importa é saber que o mercado quer seu
+    atleta). `notified_offers` (mesmo padrão json de `declined_offers`)
+    guarda quem já avisou; vira de novo na troca de temporada. Ação
+    (aceitar/recusar) continua em Elenco → Propostas recebidas."""
+    import json
+    from engine.transfer import incoming_offers
+    from engine.inbox import add_message
+    notified = json.loads(career["notified_offers"] or "[]")
+    seen = {pid for pid, _cid, yr in notified if yr == career["season_year"]}
+    new_entries = []
+    for o in incoming_offers(conn, career):
+        if o["player_id"] in seen:
+            continue
+        add_message(conn, career["id"], career["current_round"] or 0, "market",
+                    f"💰 Interesse no mercado — {o['player_name']}",
+                    f"{o['club_name']} sinalizou interesse em {o['player_name']} "
+                    f"(OVR {o['overall']}), oferta inicial {fmt_money(o['amount'])}.\n"
+                    f"Outros clubes podem aparecer enquanto durar o assédio.\n"
+                    f"Responda em Elenco → Propostas recebidas.",
+                    ref_type="player", ref_id=o["player_id"])
+        seen.add(o["player_id"])
+        new_entries.append([o["player_id"], o["club_id"], career["season_year"]])
+    if new_entries:
+        kept = [e for e in notified if e[2] == career["season_year"]] + new_entries
+        conn.execute("UPDATE career SET notified_offers=? WHERE id=?",
+                     (json.dumps(kept), career["id"]))
+        conn.commit()
 
 
 def api_incoming_offers(c):

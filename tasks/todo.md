@@ -137,6 +137,23 @@ sem gol: chutes pra fora, defesas, escanteios, ataques perigosos.
   debitou €2.0M e cortou pra 3 semanas, `process_recoveries` avançou e
   marcou 'recovered' + gerou mensagem de alta médica. Rebuild `.app` ok.
 
+## Extra — Propostas de assédio na inbox — [x] FEITO
+(pedido do user: "as propostas pelos meus jogadores devem ir pra inbox")
+
+- `gameapi._notify_incoming_offers` — posta kind="market" quando há
+  assédio novo pelo elenco. `incoming_offers` é determinístico mas troca
+  o clube pretendente a cada rodada pro mesmo jogador (RNG escolhe novo
+  comprador entre candidatos toda vez) — dedup por (jogador,clube) viraria
+  "novo" toda hora. Notifica 1x por JOGADOR/temporada ("há interesse em
+  X"); ação de aceitar/recusar continua em Elenco → Propostas recebidas
+  (não duplicado — ref na mensagem aponta pra lá). `notified_offers`
+  (coluna nova, mesmo padrão JSON de `declined_offers`) evita repost,
+  reseta na troca de temporada. Chamado 1x por avanço de rodada
+  (`_web_league_round`/`play_round_live`, mesmo ponto de `_notify`
+  injuries/board) — não em re-render.
+- Testado headless: 12 jogadores listados geraram assédio em 15 rodadas →
+  exatamente 12 mensagens (1:1 com `notified_offers`, sem duplicata).
+
 **Nota:** `play_round_live` (modo "ao vivo") é o único caminho que gera
 `LiveResult`/eventos de lesão — `_web_league_round` (modo "simular rápido",
 usado por `api_play`) chama `simulate_match` sem timeline, então só
