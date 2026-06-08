@@ -84,7 +84,7 @@ def api_squad(c):
         return []
     rows = c.execute("""
         SELECT id, name, position, age, overall, potential, value, wage,
-               contract_until, loan_from_club
+               contract_until, loan_from_club, form, fitness
         FROM players WHERE club_id=? AND retired=0
         ORDER BY CASE position WHEN 'GK' THEN 1 WHEN 'DF' THEN 2
                                WHEN 'MF' THEN 3 WHEN 'FW' THEN 4 END, overall DESC
@@ -97,8 +97,84 @@ def api_squad(c):
             "value": p["value"], "value_fmt": fmt_money(p["value"]),
             "wage_fmt": fmt_money(p["wage"]),
             "contract": p["contract_until"], "loan": p["loan_from_club"] is not None,
+            "fitness": p["fitness"] if p["fitness"] is not None else 100,
+            "form": round(p["form"] if p["form"] is not None else 1.0, 2),
         })
     return out
+
+
+def api_player_detail(c, player_id):
+    """Perfil completo de 1 jogador — atributos passam pelo masking
+    (engine/knowledge): elenco próprio e listados veem tudo, resto vê
+    faixa/oculto conforme prestígio do clube do técnico."""
+    from engine.knowledge import known_attrs, ATTRS, ATTR_LABELS
+    from engine.scouting import confirmed_attrs, scout_cost
+    car = get_active_career(c)
+    p = c.execute("""
+        SELECT p.*, cl.name club_name, cl.prestige club_prestige
+        FROM players p LEFT JOIN clubs cl ON cl.id = p.club_id
+        WHERE p.id=?
+    """, (player_id,)).fetchone()
+    if not p:
+        return None
+    is_own = bool(car and p["club_id"] == car["manager_club_id"])
+    is_listed = bool(p["transfer_listed"] or p["loan_listed"])
+    buyer_prestige = None
+    if car:
+        row = c.execute("SELECT prestige FROM clubs WHERE id=?", (car["manager_club_id"],)).fetchone()
+        buyer_prestige = row["prestige"] if row else None
+    raw = {a: p[a] for a in ATTRS}
+    confirmed = confirmed_attrs(c, car["id"], player_id) if car else set()
+    masked = known_attrs(raw, car["id"] if car else 0, player_id,
+                         is_own=is_own, is_listed=is_listed, prestige=buyer_prestige,
+                         confirmed=confirmed)
+    attrs = [{"key": a, "label": ATTR_LABELS[a], "value": masked[a],
+              "known": masked[a] != "?", "confirmed": a in confirmed} for a in ATTRS]
+    injury = None
+    if car and is_own:
+        from engine.injury import active_injury, surgery_offer, _severity_of
+        inj = active_injury(c, car["id"], player_id)
+        if inj:
+            offer = surgery_offer(inj["weeks_left"], _severity_of(inj["kind"]))
+            injury = {**inj,
+                      "can_surgery": not inj["surgery"],
+                      "surgery_cost": offer["cost"], "surgery_cost_fmt": fmt_money(offer["cost"]),
+                      "surgery_weeks_after": offer["weeks_after"],
+                      "surgery_risk_pct": offer["risk_pct"],
+                      "surgery_weeks_saved": offer["weeks_saved"]}
+    return {
+        "can_scout": bool(car) and not is_own,
+        "scout_cost": scout_cost(p["overall"]),
+        "scout_cost_fmt": fmt_money(scout_cost(p["overall"])),
+        "id": p["id"], "name": p["name"], "position": p["position"] or "?",
+        "age": p["age"] or 0, "nationality": p["nationality"],
+        "overall": p["overall"], "potential": p["potential"],
+        "club_id": p["club_id"], "club_name": p["club_name"] or "—",
+        "value": p["value"], "value_fmt": fmt_money(p["value"]),
+        "wage": p["wage"], "wage_fmt": fmt_money(p["wage"]),
+        "contract": p["contract_until"],
+        "fitness": p["fitness"] if p["fitness"] is not None else 100,
+        "form": round(p["form"] if p["form"] is not None else 1.0, 2),
+        "transfer_listed": bool(p["transfer_listed"]),
+        "loan_listed": bool(p["loan_listed"]),
+        "is_own": is_own, "attrs": attrs, "injury": injury,
+    }
+
+
+def api_decide_surgery(c, injury_id):
+    """Aceita oferta de cirurgia pra lesão ativa — debita custo, recalcula
+    prazo (com risco determinístico de complicação)."""
+    from engine.injury import decide_surgery
+    car = get_active_career(c)
+    if not car:
+        return {"ok": False, "msg": "Sem carreira ativa."}
+    r = decide_surgery(c, car, injury_id)
+    if not r.get("ok"):
+        return r
+    msg = f"🏥 Cirurgia realizada — novo prazo: {r['weeks_after']} semanas. Custo: {fmt_money(r['cost'])}."
+    if r["complication"]:
+        msg += "\n⚠️ Complicação no pós-operatório — recuperação demorou mais que o previsto."
+    return {"ok": True, "msg": msg}
 
 
 def api_leagues(c):
@@ -116,6 +192,81 @@ def api_clubs(c, league_id):
                      (league_id,)).fetchall()
     return [{"id": r["id"], "name": r["name"], "prestige": r["prestige"],
              "colors": club_colors(r["name"])} for r in rows]
+
+
+def api_scout_player(c, player_id):
+    """Manda olheiro investigar — confirma atributos (custa caixa)."""
+    from engine.scouting import run_scout
+    car = get_active_career(c)
+    if not car:
+        return {"ok": False, "msg": "Sem carreira ativa."}
+    return run_scout(c, car, player_id)
+
+
+def api_inbox(c):
+    """Lista mensagens da inbox (mais recente primeiro) + contagem de não-lidas."""
+    from engine.inbox import list_messages, unread_count, KIND_LABELS
+    car = get_active_career(c)
+    if not car:
+        return {"messages": [], "unread": 0}
+    msgs = list_messages(c, car["id"])
+    for m in msgs:
+        m["kind_label"] = KIND_LABELS.get(m["kind"], m["kind"])
+    return {"messages": msgs, "unread": unread_count(c, car["id"])}
+
+
+def api_inbox_mark_read(c, message_id=None):
+    from engine.inbox import mark_read
+    car = get_active_career(c)
+    if not car:
+        return {"ok": False}
+    mark_read(c, car["id"], message_id)
+    return {"ok": True}
+
+
+def api_player_notes(c, player_id):
+    car = get_active_career(c)
+    if not car:
+        return []
+    rows = c.execute(
+        "SELECT id, text, tag, created_round FROM player_notes "
+        "WHERE career_id=? AND player_id=? ORDER BY id DESC",
+        (car["id"], player_id)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def api_add_note(c, player_id, text, tag=None):
+    car = get_active_career(c)
+    if not car or not text.strip():
+        return {"ok": False}
+    c.execute("INSERT INTO player_notes (career_id, player_id, text, tag, created_round) "
+              "VALUES (?,?,?,?,?)", (car["id"], player_id, text.strip(), tag, car["current_round"] or 0))
+    c.commit()
+    return {"ok": True}
+
+
+def api_delete_note(c, note_id):
+    car = get_active_career(c)
+    if not car:
+        return {"ok": False}
+    c.execute("DELETE FROM player_notes WHERE id=? AND career_id=?", (note_id, car["id"]))
+    c.commit()
+    return {"ok": True}
+
+
+def api_set_transfer_listed(c, player_id, listed: bool):
+    """Liga/desliga jogador do próprio elenco na lista de transferências
+    (público — passa a ser visto por outros clubes sem masking)."""
+    car = get_active_career(c)
+    if not car:
+        return {"ok": False, "msg": "Sem carreira ativa."}
+    p = c.execute("SELECT club_id FROM players WHERE id=?", (player_id,)).fetchone()
+    if not p or p["club_id"] != car["manager_club_id"]:
+        return {"ok": False, "msg": "Jogador não é do seu elenco."}
+    c.execute("UPDATE players SET transfer_listed=? WHERE id=?", (1 if listed else 0, player_id))
+    c.commit()
+    return {"ok": True, "listed": listed}
 
 
 def api_table(c):
@@ -138,6 +289,7 @@ def api_table(c):
                 "played": s.played, "wins": s.wins, "draws": s.draws,
                 "losses": s.losses, "gf": s.gf, "ga": s.ga,
                 "gd": s.gf - s.ga, "points": s.points,
+                "yellows": s.yellows, "reds": s.reds,
                 "is_player": s.club_id == car["manager_club_id"],
                 "zone": "cl" if i <= 4 else ("rel" if i > n - 3 else ""),
             })
@@ -163,6 +315,68 @@ def api_table(c):
             "zone": "cl" if r["pos"] <= 4 else ("rel" if r["pos"] > n - 3 else ""),
         })
     return {"rows": out, "season": last}
+
+
+def api_competitions(c):
+    """Lista competições disponíveis pra exibir na Classificação (a partir
+    do estado real da carreira — Brasileirão sempre, Estadual se já disputado
+    nesta temporada, copas se o clube do gestor está classificado)."""
+    car = get_active_career(c)
+    if not car:
+        return []
+    from engine.copa import COMPS, ALL_COMPS, ensure_comp, player_in_comp
+    out = [{"key": "brasileirao", "label": "Brasileirão"}]
+    if (car["estadual_year"] or 0) == car["season_year"] and car["estadual_data"]:
+        out.append({"key": "estadual", "label": "Estadual"})
+    for comp in ALL_COMPS:
+        ensure_comp(c, car, comp)
+        if player_in_comp(c, car, comp):
+            out.append({"key": f"copa_{comp}", "label": COMPS[comp]["name"]})
+    return out
+
+
+def api_estadual_table(c):
+    """Classificação dos grupos do estadual jogado nesta temporada (persistido
+    em career.estadual_data — antes só existia na tela de resumo do momento)."""
+    import json
+    car = get_active_career(c)
+    if not car or (car["estadual_year"] or 0) != car["season_year"] or not car["estadual_data"]:
+        return {"ok": False}
+    return {"ok": True, **json.loads(car["estadual_data"])}
+
+
+def api_copa_bracket(c, comp):
+    """Chaveamento (mata-mata) da copa — reconstruído da tabela `copa`,
+    que já guarda stage/match/placar/vencedor de cada confronto da temporada."""
+    car = get_active_career(c)
+    if not car:
+        return {"ok": False}
+    from engine.copa import COMPS, STAGES, ensure_comp
+    ensure_comp(c, car, comp)
+    rows = c.execute("""
+        SELECT cp.stage_idx, cp.match_idx, cp.home_id, cp.away_id, cp.played,
+               cp.home_goals, cp.away_goals, cp.winner_id, h.name home_name, a.name away_name
+        FROM copa cp JOIN clubs h ON h.id=cp.home_id JOIN clubs a ON a.id=cp.away_id
+        WHERE cp.career_id=? AND cp.season_year=? AND cp.comp=?
+        ORDER BY cp.stage_idx, cp.match_idx
+    """, (car["id"], car["season_year"], comp)).fetchall()
+    cid = car["manager_club_id"]
+    stages = []
+    for si, (stage_name, _) in enumerate(STAGES):
+        matches = [r for r in rows if r["stage_idx"] == si]
+        if not matches:
+            continue
+        out = []
+        for r in matches:
+            out.append({
+                "home": r["home_name"], "away": r["away_name"],
+                "played": bool(r["played"]),
+                "score": f"{r['home_goals']}-{r['away_goals']}" if r["played"] else "—",
+                "winner": (r["home_name"] if r["winner_id"] == r["home_id"] else r["away_name"]) if r["played"] else None,
+                "is_player": cid in (r["home_id"], r["away_id"]),
+            })
+        stages.append({"name": stage_name, "matches": out})
+    return {"ok": True, "name": COMPS[comp]["name"], "stages": stages}
 
 
 def create_career(club_id, coach_name):
@@ -299,6 +513,7 @@ def _web_league_round(conn, career):
         _update_morale(h, a, r.home_goals, r.away_goals)
         if cid in (h.id, a.id):
             your = {"home": h.name, "hg": r.home_goals, "ag": r.away_goals, "away": a.name}
+            CAL._update_player_condition(conn, by_id[cid])
     conn.execute("UPDATE career SET current_round=?, updated_at=datetime('now') WHERE id=?",
                  (cr + 1, career["id"]))
     conn.commit()
@@ -308,6 +523,105 @@ def _web_league_round(conn, career):
             "pos": pos, "table": [{"pos": i, "name": s.club_name, "pts": s.points,
                                    "j": s.played, "is_player": s.club_id == cid}
                                   for i, s in enumerate(tab[:6], 1)]}
+
+
+def _count_cards(res):
+    """(hy, hr, ay, ar) a partir dos eventos da partida."""
+    hy = sum(1 for e in res.events if e.kind == "yellow" and e.team == "H")
+    ay = sum(1 for e in res.events if e.kind == "yellow" and e.team == "A")
+    hr = sum(1 for e in res.events if e.kind == "red" and e.team == "H")
+    ar = sum(1 for e in res.events if e.kind == "red" and e.team == "A")
+    return hy, hr, ay, ar
+
+
+def _serialize_match(h, a, res, player_id):
+    from engine.live import abbr, stadium_name
+    return {
+        "home": h.name, "away": a.name,
+        "h_abbr": abbr(h.name), "a_abbr": abbr(a.name),
+        "hg": res.home_goals, "ag": res.away_goals,
+        "stadium": stadium_name(h),
+        "is_player": player_id in (h.id, a.id),
+        "events": [{"m": e.minute, "kind": e.kind, "team": e.team, "text": e.text}
+                   for e in res.events],
+    }
+
+
+def play_round_live(conn):
+    """Joga a rodada da liga ao vivo: gera timeline de TODOS os jogos, grava
+    placar+cartões+moral, avança a rodada e devolve os jogos serializados para
+    a GUI animar minuto a minuto. (Resultado já é definitivo no banco.)"""
+    from engine import calendar as CAL
+    from engine.live import build_timeline
+    from engine.season import _update_morale
+    career = get_active_career(conn)
+    if not career:
+        return {"ok": False}
+    cid = career["manager_club_id"]
+    CAL.ensure_fixtures(conn, career)
+    cr = career["current_round"] or 0
+    nr = CAL.num_rounds(conn, career)
+    clubs = CAL._load_league_clubs(conn, CAL.league_id_of(conn, cid))
+    by_id = {c.id: c for c in clubs}
+    if cid in by_id:
+        _apply_player_tactics(conn, career, by_id[cid])
+    for c in clubs:
+        c.morale = CAL._club_morale(conn, career, c.id)
+    fxs = conn.execute("""SELECT id, home_id, away_id FROM fixtures
+        WHERE career_id=? AND season_year=? AND round_idx=? AND played=0""",
+        (career["id"], career["season_year"], cr)).fetchall()
+    from engine import injury as INJ
+    matches = []
+    for f in fxs:
+        h, a = by_id[f["home_id"]], by_id[f["away_id"]]
+        res = build_timeline(h, a)
+        hy, hr, ay, ar = _count_cards(res)
+        conn.execute("""UPDATE fixtures SET played=1, home_goals=?, away_goals=?,
+            home_yellows=?, home_reds=?, away_yellows=?, away_reds=? WHERE id=?""",
+            (res.home_goals, res.away_goals, hy, hr, ay, ar, f["id"]))
+        _update_morale(h, a, res.home_goals, res.away_goals)
+        if cid in (h.id, a.id):
+            CAL._update_player_condition(conn, by_id[cid])
+            # Lesão real só pro elenco do técnico humano (custo/balanço de
+            # gerir 14k+ jogadores de IA não compensa o ganho)
+            for inj in res.injuries:
+                if inj["club_id"] == cid and not INJ.active_injury(conn, career["id"], inj["player_id"]):
+                    info = INJ.record_injury(conn, career, inj["player_id"], cid, cr + 1)
+                    from engine.inbox import add_message
+                    add_message(conn, career["id"], cr + 1, "medical",
+                                f"🚑 Lesão — {inj['name']}",
+                                f"{inj['name']} sofreu {info['kind'].lower()} durante a partida.\n"
+                                f"Previsão de recuperação: {info['weeks']} semanas (gravidade {info['severity']}).\n"
+                                f"Condição física caiu {info['fitness_drop']} pontos.",
+                                ref_type="player", ref_id=inj["player_id"])
+        matches.append(_serialize_match(h, a, res, cid))
+    # Recuperação semana a semana — avança 1 rodada = 1 semana
+    for rec in INJ.process_recoveries(conn, career):
+        from engine.inbox import add_message
+        add_message(conn, career["id"], cr + 1, "medical",
+                    f"✅ Recuperado — {rec['name']}",
+                    f"{rec['name']} concluiu a recuperação e está liberado para retornar aos treinos.",
+                    ref_type="player", ref_id=rec["player_id"])
+    conn.execute("UPDATE career SET current_round=?, updated_at=datetime('now') WHERE id=?",
+                 (cr + 1, career["id"]))
+    conn.commit()
+    # ordena: jogo do humano primeiro
+    matches.sort(key=lambda m: 0 if m["is_player"] else 1)
+    return {"ok": True, "kind": "round_live", "round": cr + 1, "n": nr,
+            "matches": matches, "table": _full_table(conn, career, cid)}
+
+
+def _full_table(conn, career, cid):
+    from engine import calendar as CAL
+    tab = CAL.standings(conn, career)
+    n = len(tab)
+    return [{"pos": i, "name": s.club_name, "club_id": s.club_id,
+             "played": s.played, "wins": s.wins, "draws": s.draws, "losses": s.losses,
+             "gf": s.gf, "ga": s.ga, "gd": s.gd, "points": s.points,
+             "yellows": s.yellows, "reds": s.reds,
+             "is_player": s.club_id == cid,
+             "zone": "cl" if i <= 4 else ("rel" if i > n - 3 else "")}
+            for i, s in enumerate(tab, 1)]
 
 
 def _web_copa(conn, career, comp, st):
@@ -325,6 +639,122 @@ def _web_copa(conn, career, comp, st):
     champ = COPA.champion_id(conn, career, comp)
     out = {"ok": True, "kind": "copa", "comp_name": COPA.COMPS[comp]["name"],
            "stage": COPA.STAGES[st][0], "lines": lines, "champion": None}
+    if champ:
+        out["champion"] = conn.execute("SELECT name FROM clubs WHERE id=?", (champ,)).fetchone()[0]
+        if champ == cid:
+            conn.execute("UPDATE career SET money=money+?, reputation=MIN(100,reputation+6), titles=titles+1 WHERE id=?",
+                         (COPA.COMPS[comp]["prize"], career["id"]))
+            out["won"] = True
+    else:
+        if any(w == cid for _, w in winners):
+            conn.execute("UPDATE career SET money=money+4000000 WHERE id=?", (career["id"],))
+            out["advanced"] = True
+        elif COPA.player_tie(conn, career, comp, st) is None and cid in ids:
+            out["eliminated"] = True
+    conn.commit()
+    return out
+
+
+def _save_estadual_data(conn, career, name, res):
+    """Persiste grupos/campeão do estadual — sem isso, o resultado só existia
+    na tela de resumo do momento em que foi jogado (sumia ao navegar)."""
+    import json
+    data = {"name": name, "groups": res.group_tables,
+            "champion": res.champion.name if res.champion else None,
+            "player_stage": res.player_stage}
+    conn.execute("UPDATE career SET estadual_data=? WHERE id=?",
+                 (json.dumps(data), career["id"]))
+
+
+def play_estadual_live(conn):
+    """Roda o estadual inteiro produzindo as rodadas com timelines (grupos +
+    mata-mata) para a GUI animar todos os jogos. Grava prêmio/reputação/ano."""
+    from engine.estadual import run_estadual_live
+    from ui.career import _load_state_clubs, _STATE_NAMES
+    career = get_active_career(conn)
+    if not career:
+        return {"ok": False}
+    cid = career["manager_club_id"]
+    state = conn.execute("SELECT state FROM clubs WHERE id=?", (cid,)).fetchone()[0]
+    clubs = _load_state_clubs(conn, state)
+    my = next((c for c in clubs if c.id == cid), None)
+    if my:
+        _apply_player_tactics(conn, career, my)
+    matchdays, res = run_estadual_live(state, clubs, watch_club_id=cid)
+    prize = 0
+    if res.player_champion:
+        prize = 8_000_000
+        conn.execute("UPDATE career SET money=money+?, reputation=MIN(100,reputation+4), titles=titles+1 WHERE id=?",
+                     (prize, career["id"]))
+    elif res.player_stage in ("Final", "Semifinais"):
+        prize = 2_500_000
+        conn.execute("UPDATE career SET money=money+? WHERE id=?", (prize, career["id"]))
+    conn.execute("UPDATE career SET estadual_year=? WHERE id=?", (career["season_year"], career["id"]))
+    _save_estadual_data(conn, career, _STATE_NAMES.get(state, f"Estadual {state}"), res)
+    conn.commit()
+    return {"ok": True, "kind": "estadual_live",
+            "name": _STATE_NAMES.get(state, f"Estadual {state}"),
+            "matchdays": matchdays,
+            "groups": res.group_tables,
+            "champion": res.champion.name if res.champion else "?",
+            "player_stage": res.player_stage, "prize": prize}
+
+
+def play_copa_live(conn):
+    """Joga a fase de copa devida ao vivo (todas as partidas com timeline),
+    grava resultados, semeia a próxima fase e devolve as partidas p/ animar."""
+    from engine import copa as COPA
+    from engine.live import build_timeline, abbr, stadium_name
+    from engine.simulation import simulate_penalties
+    career = get_active_career(conn)
+    if not career:
+        return {"ok": False}
+    ev = api_next(conn)
+    if ev.get("kind") != "copa":
+        return {"ok": False, "kind": ev.get("kind")}
+    comp, st = ev["comp"], ev["stage"]
+    cid = career["manager_club_id"]
+    ties = conn.execute("""SELECT id, match_idx, home_id, away_id FROM copa
+        WHERE career_id=? AND season_year=? AND comp=? AND stage_idx=? AND played=0
+        ORDER BY match_idx""", (career["id"], career["season_year"], comp, st)).fetchall()
+    ids = {t["home_id"] for t in ties} | {t["away_id"] for t in ties}
+    by_id = {i: _club_obj(conn, i) for i in ids}
+    if cid in by_id:
+        _apply_player_tactics(conn, career, by_id[cid])
+
+    matches, winners = [], []
+    for t in ties:
+        h, a = by_id[t["home_id"]], by_id[t["away_id"]]
+        lr = build_timeline(h, a)
+        m = {"home": h.name, "away": a.name, "h_abbr": abbr(h.name), "a_abbr": abbr(a.name),
+             "hg": lr.home_goals, "ag": lr.away_goals, "stadium": stadium_name(h),
+             "is_player": cid in (h.id, a.id),
+             "events": [{"m": e.minute, "kind": e.kind, "team": e.team, "text": e.text}
+                        for e in lr.events]}
+        if lr.home_goals == lr.away_goals:
+            hp, ap = simulate_penalties(h, a)
+            w = h if hp >= ap else a
+            m["pens"] = (hp, ap); m["winner"] = w.name
+        else:
+            w = h if lr.home_goals > lr.away_goals else a
+        conn.execute("UPDATE copa SET played=1, home_goals=?, away_goals=?, winner_id=? WHERE id=?",
+                     (lr.home_goals, lr.away_goals, w.id, t["id"]))
+        winners.append((t["match_idx"], w.id))
+        matches.append(m)
+    # semeia próxima fase
+    if st + 1 < len(COPA.STAGES):
+        winners.sort()
+        wids = [wid for _, wid in winners]
+        for mi in range(len(wids) // 2):
+            conn.execute("""INSERT INTO copa(career_id, season_year, comp, stage_idx, match_idx,
+                home_id, away_id, played) VALUES (?,?,?,?,?,?,?,0)""",
+                (career["id"], career["season_year"], comp, st + 1, mi, wids[mi*2], wids[mi*2+1]))
+    conn.commit()
+
+    matches.sort(key=lambda x: 0 if x["is_player"] else 1)
+    champ = COPA.champion_id(conn, career, comp)
+    out = {"ok": True, "kind": "copa_live", "comp_name": COPA.COMPS[comp]["name"],
+           "stage": COPA.STAGES[st][0], "matches": matches, "champion": None}
     if champ:
         out["champion"] = conn.execute("SELECT name FROM clubs WHERE id=?", (champ,)).fetchone()[0]
         if champ == cid:
@@ -360,6 +790,7 @@ def _web_estadual(conn, career):
         prize = 2_500_000
         conn.execute("UPDATE career SET money=money+? WHERE id=?", (prize, career["id"]))
     conn.execute("UPDATE career SET estadual_year=? WHERE id=?", (career["season_year"], career["id"]))
+    _save_estadual_data(conn, career, _STATE_NAMES.get(state, f"Estadual {state}"), res)
     conn.commit()
     return {"ok": True, "kind": "estadual", "name": _STATE_NAMES.get(state, f"Estadual {state}"),
             "groups": res.group_tables, "log": res.log[-2:],
@@ -391,48 +822,90 @@ def _web_finish_season(conn, career):
              s.played, s.wins, s.draws, s.losses, s.gf, s.ga, s.points))
     conn.commit()
 
+    from engine.career import apply_promotion_relegation
+    promo = apply_promotion_relegation(conn, career["season_year"], cid, league_id, table)
+
     roll_red_cards(conn, cid, seed=career["season_year"] * 7 + cid)
     fin = apply_season_finances(conn, career, manager_pos, n, won_title)
-    career = get_active_career(conn)
+    career = conn.execute("SELECT * FROM career WHERE id=?", (career["id"],)).fetchone()
     rep = season_reputation(conn, career, manager_pos, n, won_title, fin)
-    career = get_active_career(conn)
+    from engine.inbox import add_message
+    _board_msg = (f"Posição final: {manager_pos}º de {n} (meta era {rep['expectation']}º).\n"
+                  + "\n".join(rep["reasons"])
+                  + f"\n\nReputação: {rep['old_rep']} → {rep['new_rep']} ({rep['delta']:+d})")
+    if rep["sacked"]:
+        _board_title = "🔴 Você foi demitido"
+    elif rep["warned"]:
+        _board_title = "🟡 Conselho emite advertência"
+    else:
+        _board_title = f"🏛 Avaliação de fim de temporada — {career['season_year']}"
+    add_message(conn, career["id"], career["current_round"] or 0, "board", _board_title, _board_msg,
+                ref_type="season", ref_id=career["season_year"])
+    # season_reputation pode setar status='sacked' — get_active_career() filtra
+    # status='active' e voltaria None aqui, derrubando o resto do fluxo.
+    # Refaz pelo id, que não muda independente do status.
+    career = conn.execute("SELECT * FROM career WHERE id=?", (career["id"],)).fetchone()
 
     sacked = rep["sacked"]
     rehired = None
     if sacked:
         from engine.coach import offers_for_player, fill_vacancies
         import random
-        conn.execute("UPDATE career SET seasons_played=seasons_played+1 WHERE id=?", (career["id"],))
-        conn.commit(); career = get_active_career(conn)
+        # career["status"] já virou 'sacked' aqui (season_reputation aplicou) —
+        # get_active_career() filtra status='active' e retornaria None, derrubando
+        # o resto do fluxo. Refaz a busca direto pelo id, que não muda.
+        career_id = career["id"]
+        conn.execute("UPDATE career SET seasons_played=seasons_played+1 WHERE id=?", (career_id,))
+        conn.commit()
+        career = conn.execute("SELECT * FROM career WHERE id=?", (career_id,)).fetchone()
         offers = offers_for_player(conn, rep["new_rep"], cid)
         if offers:
             ch = offers[0]
-            conn.execute("UPDATE career SET manager_club_id=?, reputation=?, warnings=0 WHERE id=?",
-                         (ch["club_id"], min(100, rep["new_rep"] + 8), career["id"]))
-            conn.commit(); career = get_active_career(conn)
+            # Recontratado em outro clube — carreira volta a ficar ativa
+            conn.execute("""UPDATE career SET manager_club_id=?, reputation=?, warnings=0,
+                            status='active' WHERE id=?""",
+                         (ch["club_id"], min(100, rep["new_rep"] + 8), career_id))
+            conn.commit()
+            career = conn.execute("SELECT * FROM career WHERE id=?", (career_id,)).fetchone()
             from engine.manager import occupy_club
             occupy_club(conn, ch["club_id"]); sync_player_coach(conn, career)
             fill_vacancies(conn, ch["club_id"], random.Random(career["season_year"]))
             set_expectation(conn, career)
             rehired = ch["name"]
         else:
-            conn.execute("UPDATE career SET status='sacked' WHERE id=?", (career["id"],))
-            conn.commit(); career = get_active_career(conn); sync_player_coach(conn, career)
+            conn.execute("UPDATE career SET status='sacked' WHERE id=?", (career_id,))
+            conn.commit()
+            career = conn.execute("SELECT * FROM career WHERE id=?", (career_id,)).fetchone()
+            sync_player_coach(conn, career)
         report = advance_season(conn, career["season_year"], manager_club_id=cid,
-                                training_level=career["training_level"] or 2)
+                                training_level=career["training_level"] or 2,
+                                training_focus=career["training_focus"] or "geral")
         conn.execute("UPDATE career SET season_year=?, current_round=0 WHERE id=?", (report.year, career["id"]))
         conn.execute("DELETE FROM fixtures WHERE career_id=?", (career["id"],))
         conn.execute("DELETE FROM copa WHERE career_id=?", (career["id"],))
         conn.commit()
         return {"ok": True, "kind": "season_end", "champion": champion.club_name,
                 "pos": manager_pos, "won_title": won_title, "fin": fin, "rep": rep,
-                "sacked": True, "rehired": rehired}
+                "sacked": True, "rehired": rehired, "promo": promo,
+                "ai_transfers": report.ai_transfers}
 
-    conn.execute("UPDATE players SET contract_until=? WHERE club_id=? AND contract_until<=?",
-                 (career["season_year"] + 3, cid, career["season_year"]))
+    # Contratos do clube do jogador vencidos e NÃO renovados (painel "Contratos"
+    # — engine.contracts) saem como agentes livres, igual ao fluxo do CLI.
+    conn.execute("""UPDATE players SET club_id=NULL
+        WHERE club_id=? AND retired=0 AND loan_from_club IS NULL
+          AND contract_until IS NOT NULL AND contract_until<=?""",
+        (cid, career["season_year"]))
     conn.commit()
     report = advance_season(conn, career["season_year"], manager_club_id=cid,
-                            training_level=career["training_level"] or 2)
+                            training_level=career["training_level"] or 2,
+                                training_focus=career["training_focus"] or "geral")
+    _summary = (f"🏆 Campeão: {champion.club_name}" + (" (você!)" if won_title else "") + "\n"
+                f"📈 {report.newgens_created} novos jovens chegaram à base.\n"
+                f"🔄 {report.ai_transfers} transferências movimentaram o mercado na janela.")
+    if promo and promo.get("promoted"):
+        _summary += f"\n🔀 Mudança de divisão: agora na {promo['league_name']}."
+    add_message(conn, career["id"], 0, "record", f"📜 Temporada {career['season_year']} encerrada", _summary,
+                ref_type="season", ref_id=career["season_year"])
     conn.execute("""UPDATE career SET season_year=?, seasons_played=seasons_played+1,
         titles=titles+?, current_round=0 WHERE id=?""",
         (report.year, 1 if won_title else 0, career["id"]))
@@ -443,7 +916,8 @@ def _web_finish_season(conn, career):
     set_expectation(conn, career)
     return {"ok": True, "kind": "season_end", "champion": champion.club_name,
             "pos": manager_pos, "won_title": won_title, "fin": fin, "rep": rep,
-            "sacked": False, "newgens": report.newgens_created}
+            "sacked": False, "newgens": report.newgens_created, "promo": promo,
+            "ai_transfers": report.ai_transfers}
 
 
 # ─── Saves ─────────────────────────────────────────────────────────────────────
@@ -478,7 +952,8 @@ def api_lineup(c):
 
     def pj(p, on):
         return {"id": p.id, "name": p.name, "pos": p.position, "ovr": p.overall,
-                "age": getattr(p, "age", 0) or 0, "on": on}
+                "age": getattr(p, "age", 0) or 0, "on": on,
+                "fitness": getattr(p, "fitness", 100), "form": round(getattr(p, "form", 1.0), 2)}
     xi_out = [pj(p, True) for p in xi]
     bench = [pj(p, False) for p in squad if p.id not in xi_ids]
     avg = round(sum(p.overall for p in xi) / 11, 1) if len(xi) == 11 else 0
@@ -529,39 +1004,126 @@ def api_stadium(c):
             "fill": round(fill * 100), "public": int((club["capacity"] or 0) * fill),
             "revenue": rev, "revenue_fmt": fmt_money(rev),
             "training": tl, "training_cost": tl * 2_500_000,
-            "training_cost_fmt": fmt_money(tl * 2_500_000)}
+            "training_cost_fmt": fmt_money(tl * 2_500_000),
+            "training_focus": car["training_focus"] or "geral",
+            "training_focuses": ["geral", "fisico", "tecnico", "finalizacao"]}
 
 
-def save_stadium(c, price, training):
+def save_stadium(c, price, training, focus=None):
     car = get_active_career(c)
     if not car:
         return {"ok": False}
     price = max(5, min(300, int(price)))
     training = max(1, min(5, int(training)))
     c.execute("UPDATE clubs SET ticket_price=? WHERE id=?", (price, car["manager_club_id"]))
-    c.execute("UPDATE career SET training_level=? WHERE id=?", (training, car["id"]))
+    if focus:
+        c.execute("UPDATE career SET training_level=?, training_focus=? WHERE id=?",
+                  (training, focus, car["id"]))
+    else:
+        c.execute("UPDATE career SET training_level=? WHERE id=?", (training, car["id"]))
     c.commit()
     return {"ok": True}
 
 
 # ─── Mercado de transferências ──────────────────────────────────────────────────
 
-def api_market(c, position=None, max_price=None, min_ovr=0):
-    from engine.transfer import list_market, asking_and_clause
+def _ensure_market_lists(c):
+    """Popula listas de transferência/empréstimo dos clubes IA uma vez por mundo
+    (determinístico). Jogadores excedentes ficam à venda; jovens, p/ empréstimo."""
+    has = c.execute("SELECT 1 FROM players WHERE transfer_listed=1 LIMIT 1").fetchone()
+    if has:
+        return
+    car = get_active_career(c)
+    mine = car["manager_club_id"] if car else -1
+    c.execute("""UPDATE players SET transfer_listed=1
+        WHERE retired=0 AND club_id<>? AND (id % 5)=0""", (mine,))
+    c.execute("""UPDATE players SET loan_listed=1
+        WHERE retired=0 AND club_id<>? AND (age IS NULL OR age<=23) AND (id % 7)=0""", (mine,))
+    c.commit()
+
+
+def api_nationalities(c):
+    rows = c.execute("""SELECT nationality, COUNT(*) n FROM players
+        WHERE retired=0 AND nationality IS NOT NULL AND nationality<>'default'
+          AND nationality<>'' GROUP BY nationality ORDER BY n DESC""").fetchall()
+    return [r["nationality"] for r in rows]
+
+
+def api_market(c, position=None, max_price=None, min_ovr=0, max_ovr=99,
+               min_age=0, max_age=99, nationality=None,
+               only_transfer=False, only_loan=False, limit=400):
+    from engine.transfer import buy_price, resistance_mult
     car = get_active_career(c)
     if not car:
         return {"ok": False}
-    rows = list_market(c, car["manager_club_id"], position=position or None,
-                       max_price=max_price, min_ovr=min_ovr, limit=60)
+    _ensure_market_lists(c)
+    buyer_prestige = c.execute("SELECT prestige FROM clubs WHERE id=?",
+                               (car["manager_club_id"],)).fetchone()[0]
+    q = """SELECT p.id, p.name, p.position, p.age, p.overall, p.potential, p.value,
+                  p.release_clause, p.nationality, p.transfer_listed, p.loan_listed,
+                  c.name club, c.prestige seller_prestige
+           FROM players p JOIN clubs c ON c.id=p.club_id
+           WHERE p.retired=0 AND p.club_id<>? AND p.loan_from_club IS NULL
+             AND p.overall BETWEEN ? AND ?"""
+    params = [car["manager_club_id"], min_ovr, max_ovr]
+    if position:
+        q += " AND p.position=?"; params.append(position)
+    if max_price:
+        q += " AND p.value<=?"; params.append(max_price)
+    if min_age:
+        q += " AND p.age>=?"; params.append(min_age)
+    if max_age < 99:
+        q += " AND p.age<=?"; params.append(max_age)
+    if nationality:
+        q += " AND p.nationality=?"; params.append(nationality)
+    if only_transfer:
+        q += " AND p.transfer_listed=1"
+    if only_loan:
+        q += " AND p.loan_listed=1"
+    q += " ORDER BY p.overall DESC, p.potential DESC LIMIT ?"
+    params.append(limit)
+    rows = c.execute(q, params).fetchall()
     out = []
     for r in rows:
-        asking, clause = asking_and_clause(c, r["id"], car)
+        # asking_and_clause(conn, id, career) reconsultava value/release_clause
+        # já presentes em `r` — N+1 query que deixava o Mercado lento (até 400
+        # SELECTs extras por render). Calcula direto a partir da própria linha.
+        mult = resistance_mult(r["seller_prestige"], buyer_prestige, r["overall"], r["transfer_listed"])
+        asking = int(buy_price(r["value"], r["id"], car["id"], car["season_year"]) * mult)
+        clause = int((r["release_clause"] or int((r["value"] or 1_000_000) * 2.2)) * mult)
+        flags = []
+        if r["transfer_listed"]: flags.append("V")   # à venda
+        if r["loan_listed"]: flags.append("E")       # empréstimo
         out.append({"id": r["id"], "name": r["name"], "pos": r["position"] or "?",
                     "age": r["age"] or 0, "ovr": r["overall"], "pot": r["potential"],
-                    "club": r["club"], "value": r["value"], "value_fmt": fmt_money(r["value"]),
+                    "nat": r["nationality"] or "?", "club": r["club"],
+                    "value": r["value"], "value_fmt": fmt_money(r["value"]),
                     "asking": asking, "asking_fmt": fmt_money(asking),
-                    "clause": clause, "clause_fmt": fmt_money(clause)})
-    return {"ok": True, "players": out, "money": car["money"], "money_fmt": fmt_money(car["money"])}
+                    "clause": clause, "clause_fmt": fmt_money(clause),
+                    "flags": "".join(flags)})
+    return {"ok": True, "players": out, "count": len(out),
+            "money": car["money"], "money_fmt": fmt_money(car["money"])}
+
+
+def api_incoming_offers(c):
+    """Propostas de clubes IA pelos seus jogadores (assédio)."""
+    from engine.transfer import incoming_offers
+    car = get_active_career(c)
+    if not car:
+        return []
+    out = []
+    for o in incoming_offers(c, car):
+        out.append({**o, "amount_fmt": fmt_money(o["amount"])})
+    return out
+
+
+def api_respond_offer(c, player_id, club_id, accept):
+    from engine.transfer import respond_incoming_offer
+    car = get_active_career(c)
+    if not car:
+        return {"ok": False, "msg": "sem carreira"}
+    ok, msg = respond_incoming_offer(c, car, int(player_id), int(club_id), bool(accept))
+    return {"ok": ok, "msg": msg}
 
 
 def api_offer(c, player_id, offer):
@@ -585,10 +1147,127 @@ def api_buy(c, player_id, price):
     return {"ok": ok, "msg": msg}
 
 
+def api_player_terms(c, player_id, agreed_fee):
+    """Etapa 2 da negociação — depois que o clube aceita a taxa, o
+    JOGADOR e o AGENTE entram na conversa (CM-style 3 partes)."""
+    from engine.transfer import player_wage_demand, agent_fee
+    car = get_active_career(c)
+    if not car:
+        return {"ok": False}
+    p = c.execute("SELECT wage, overall, age, club_id FROM players WHERE id=?", (player_id,)).fetchone()
+    if not p:
+        return {"ok": False}
+    seller = c.execute("SELECT prestige FROM clubs WHERE id=?", (p["club_id"],)).fetchone()
+    buyer = c.execute("SELECT prestige FROM clubs WHERE id=?", (car["manager_club_id"],)).fetchone()
+    agreed_fee = int(agreed_fee)
+    wage = player_wage_demand(p["wage"], p["overall"], p["age"],
+                              buyer["prestige"] if buyer else 50,
+                              seller["prestige"] if seller else 50)
+    comm = agent_fee(agreed_fee, p["overall"])
+    total = agreed_fee + comm
+    return {"ok": True, "wage_demand": wage, "wage_demand_fmt": fmt_money(wage),
+            "agent_fee": comm, "agent_fee_fmt": fmt_money(comm),
+            "fee_fmt": fmt_money(agreed_fee),
+            "total_cost": total, "total_cost_fmt": fmt_money(total),
+            "money_fmt": fmt_money(car["money"])}
+
+
+def api_finalize_transfer(c, player_id, fee, wage):
+    """Fecha o negócio nos termos das 3 partes: paga o clube vendedor (taxa),
+    acerta salário/contrato com o jogador, paga comissão ao agente."""
+    from engine.transfer import agent_fee, buy_player_at
+    car = get_active_career(c)
+    if not car:
+        return {"ok": False, "msg": "sem carreira"}
+    p = c.execute("SELECT overall FROM players WHERE id=?", (player_id,)).fetchone()
+    if not p:
+        return {"ok": False, "msg": "Jogador não encontrado."}
+    fee, wage = int(fee), int(wage)
+    comm = agent_fee(fee, p["overall"])
+    total = fee + comm
+    if total > (car["money"] or 0):
+        return {"ok": False, "msg": f"Caixa insuficiente — taxa + comissão do agente "
+                                    f"soma {fmt_money(total)}, você tem {fmt_money(car['money'])}."}
+    ok, msg = buy_player_at(c, car, player_id, fee)
+    if not ok:
+        return {"ok": False, "msg": msg}
+    new_until = car["season_year"] + 4
+    c.execute("UPDATE players SET wage=?, contract_until=? WHERE id=?", (wage, new_until, player_id))
+    c.execute("UPDATE career SET money = money - ? WHERE id=?", (comm, car["id"]))
+    c.commit()
+    return {"ok": True, "msg": f"{msg}\n💼 Agente embolsou {fmt_money(comm)} de comissão.\n"
+                               f"📝 Salário acertado em {fmt_money(wage)}/ano, contrato até {new_until}."}
+
+
 def api_sell(c, player_id):
     from engine.transfer import sell_player
     car = get_active_career(c)
     if not car:
         return {"ok": False, "msg": "sem carreira"}
     ok, msg = sell_player(c, car, player_id)
+    return {"ok": ok, "msg": msg}
+
+
+# ─── Contratos & renegociação salarial ──────────────────────────────────────────
+
+def api_contracts(c):
+    """Jogadores do elenco com contrato terminando em breve, prontos pra negociar."""
+    from engine import contracts as CT
+    from engine.finance import wage_bill
+    car = get_active_career(c)
+    if not car:
+        return {"ok": False}
+    cid = car["manager_club_id"]
+    rows = CT.expiring_players(c, cid, car["season_year"])
+    out = []
+    for r in rows:
+        demand_wage, demand_years = CT._player_demand(c, r["id"], car)
+        out.append({
+            "id": r["id"], "name": r["name"], "pos": r["position"] or "?",
+            "age": r["age"] or 0, "ovr": r["overall"], "pot": r["potential"],
+            "wage": r["wage"] or 0, "wage_fmt": fmt_money(r["wage"] or 0),
+            "contract_until": r["contract_until"],
+            "value_fmt": fmt_money(r["value"]),
+            "form": round(r["form"] if r["form"] is not None else 1.0, 2),
+            "demand_wage": demand_wage, "demand_wage_fmt": fmt_money(demand_wage),
+            "demand_years": demand_years,
+        })
+    return {"ok": True, "players": out, "count": len(out),
+            "money": car["money"], "money_fmt": fmt_money(car["money"]),
+            "wage_bill_fmt": fmt_money(wage_bill(c, cid))}
+
+
+def api_renewal_offer(c, player_id, wage, years):
+    """Avalia proposta de renovação (accept/counter/reject)."""
+    from engine import contracts as CT
+    from engine.finance import wage_bill
+    car = get_active_career(c)
+    if not car:
+        return {"ok": False}
+    cid = car["manager_club_id"]
+    p = c.execute("SELECT form FROM players WHERE id=?", (player_id,)).fetchone()
+    form = p["form"] if p and p["form"] is not None else 1.0
+    demand_wage, demand_years = CT._player_demand(c, player_id, car)
+    result, val = CT.evaluate_renewal_offer(int(wage), int(years), demand_wage, demand_years,
+                                             form, car["money"], wage_bill(c, cid))
+    return {"ok": True, "result": result, "wage": val["wage"], "wage_fmt": fmt_money(val["wage"]),
+            "years": val["years"], "demand_wage": demand_wage, "demand_wage_fmt": fmt_money(demand_wage),
+            "demand_years": demand_years}
+
+
+def api_renew(c, player_id, wage, years):
+    from engine import contracts as CT
+    car = get_active_career(c)
+    if not car:
+        return {"ok": False, "msg": "sem carreira"}
+    ok, msg = CT.renew_contract(c, car, player_id, int(wage), int(years))
+    return {"ok": ok, "msg": msg}
+
+
+def api_let_expire(c, player_id):
+    from engine import contracts as CT
+    car = get_active_career(c)
+    if not car:
+        return {"ok": False, "msg": "sem carreira"}
+    ok, msg = CT.let_expire(c, car, player_id)
     return {"ok": ok, "msg": msg}

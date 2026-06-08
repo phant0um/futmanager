@@ -24,17 +24,30 @@ def resource_dir() -> Path:
     return Path(__file__).parent
 
 
+_user_data_dir_cache: Path | None = None
+_saves_dir_cache: Path | None = None
+_active_name_cache = "_unset_"   # sentinela — distingue "ainda não lido" de None
+
+
 def user_data_dir() -> Path:
     """
     Diretório gravável para a DB do usuário (saves, progresso).
     - dev: ./data
     - bundle: ~/Library/Application Support/FutManager
+
+    Cacheado: resolvido (e criado, se preciso) uma única vez — `conn()` chama
+    isso indiretamente em toda conexão, e refazer mkdir/stat a cada vez gerava
+    delay perceptível ao trocar de painel na GUI.
     """
-    if _is_frozen():
-        d = Path.home() / "Library" / "Application Support" / "FutManager"
-        d.mkdir(parents=True, exist_ok=True)
-        return d
-    return Path(__file__).parent / "data"
+    global _user_data_dir_cache
+    if _user_data_dir_cache is None:
+        if _is_frozen():
+            d = Path.home() / "Library" / "Application Support" / "FutManager"
+            d.mkdir(parents=True, exist_ok=True)
+        else:
+            d = Path(__file__).parent / "data"
+        _user_data_dir_cache = d
+    return _user_data_dir_cache
 
 
 def template_db() -> Path:
@@ -55,10 +68,13 @@ def template_db() -> Path:
 
 
 def saves_dir() -> Path:
-    """Diretório dos saves (1 arquivo .db por jogo salvo)."""
-    d = user_data_dir() / "saves"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    """Diretório dos saves (1 arquivo .db por jogo salvo). Cacheado — ver user_data_dir()."""
+    global _saves_dir_cache
+    if _saves_dir_cache is None:
+        d = user_data_dir() / "saves"
+        d.mkdir(parents=True, exist_ok=True)
+        _saves_dir_cache = d
+    return _saves_dir_cache
 
 
 def _active_marker() -> Path:
@@ -66,20 +82,28 @@ def _active_marker() -> Path:
 
 
 def active_save_name() -> str | None:
-    m = _active_marker()
-    if m.exists():
-        name = m.read_text().strip()
-        if name and (saves_dir() / f"{name}.db").exists():
-            return name
-    return None
+    """Nome do save ativo. Cacheado em memória — só relê o marcador em disco
+    se ainda não foi lido nesta sessão; `set_active_save` invalida o cache."""
+    global _active_name_cache
+    if _active_name_cache == "_unset_":
+        m = _active_marker()
+        name = None
+        if m.exists():
+            txt = m.read_text().strip()
+            if txt and (saves_dir() / f"{txt}.db").exists():
+                name = txt
+        _active_name_cache = name
+    return _active_name_cache
 
 
 def set_active_save(name: str | None):
+    global _active_name_cache
     if name is None:
         if _active_marker().exists():
             _active_marker().unlink()
     else:
         _active_marker().write_text(name)
+    _active_name_cache = name
 
 
 def db_path() -> Path:

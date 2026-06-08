@@ -34,11 +34,20 @@ def formation_slots(formation: str) -> dict:
     return {"GK": 1, "DF": df, "MF": mf, "FW": fw}
 
 
+def fatigue_penalty(overall: int, fitness: int) -> float:
+    """Rating efetivo para escalar: titular cansado vale menos — incentiva rotação.
+    fitness 100 → rating cheio; fitness baixo → desconta até 30%."""
+    fitness = max(0, min(100, fitness if fitness is not None else 100))
+    return overall * (0.7 + 0.3 * fitness / 100)
+
+
 def auto_lineup(players: list, formation: str) -> list:
-    """Melhor 11 por posição respeitando a formação. Preenche faltas com sobras."""
+    """Melhor 11 por posição respeitando a formação (pondera fadiga — joga
+    quem rende mais agora, não só o de maior OVR no papel). Preenche faltas com sobras."""
     slots = formation_slots(formation)
     by_pos = {"GK": [], "DF": [], "MF": [], "FW": []}
-    for p in sorted(players, key=lambda x: x.overall, reverse=True):
+    rank = lambda x: fatigue_penalty(x.overall, getattr(x, "fitness", 100))
+    for p in sorted(players, key=rank, reverse=True):
         by_pos.get(p.position, by_pos["MF"]).append(p)
 
     xi, used = [], set()
@@ -49,7 +58,7 @@ def auto_lineup(players: list, formation: str) -> list:
     # Completa se faltou (posição sem jogadores suficientes)
     if len(xi) < 11:
         rest = sorted([p for p in players if p.id not in used],
-                      key=lambda x: x.overall, reverse=True)
+                      key=rank, reverse=True)
         for p in rest:
             if len(xi) >= 11:
                 break

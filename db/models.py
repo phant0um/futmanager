@@ -58,14 +58,14 @@ class Club:
         fwd = [p for p in self.lineup if p.position in ("FW", "MF")]
         if not fwd:
             return 50.0
-        return sum(p.attack_score for p in fwd) / len(fwd)
+        return sum(p.attack_score * p.condition_mult for p in fwd) / len(fwd)
 
     @property
     def defense_rating(self) -> float:
         defs = [p for p in self.lineup if p.position in ("DF", "GK")]
         if not defs:
             return 50.0
-        return sum(p.defense_score for p in defs) / len(defs)
+        return sum(p.defense_score * p.condition_mult for p in defs) / len(defs)
 
     @property
     def overall_rating(self) -> float:
@@ -96,6 +96,19 @@ class Player:
 
     overall: int = 50
     source: str = "generated"
+
+    # Carreira / rotação
+    age: int = 0
+    wage: int = 0
+    contract_until: Optional[int] = None
+    form: float = 1.0       # 0.85–1.15 — tendência recente (gols, vitórias)
+    fitness: int = 100      # 0-100 — condição física atual (cai jogando, recupera descansando)
+
+    @property
+    def condition_mult(self) -> float:
+        """Combina forma + condição física num único multiplicador de desempenho."""
+        fit_mult = 0.85 + 0.15 * max(0, min(100, self.fitness)) / 100
+        return max(0.7, min(1.2, self.form * fit_mult))
 
     @property
     def attack_score(self) -> float:
@@ -164,6 +177,8 @@ class Standing:
     losses: int = 0
     gf: int = 0
     ga: int = 0
+    yellows: int = 0
+    reds: int = 0
 
     @property
     def points(self) -> int:
@@ -173,10 +188,12 @@ class Standing:
     def gd(self) -> int:
         return self.gf - self.ga
 
-    def update(self, scored: int, conceded: int):
+    def update(self, scored: int, conceded: int, yellows: int = 0, reds: int = 0):
         self.played += 1
         self.gf += scored
         self.ga += conceded
+        self.yellows += yellows
+        self.reds += reds
         if scored > conceded:
             self.wins += 1
         elif scored == conceded:

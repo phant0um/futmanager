@@ -29,6 +29,7 @@ class LiveResult:
     home_scorers: list = field(default_factory=list)
     away_scorers: list = field(default_factory=list)
     reds: dict = field(default_factory=dict)   # {player_name: club_id}
+    injuries: list = field(default_factory=list)  # [{player_id, name, club_id}] — quem saiu contundido
     events: list = field(default_factory=list)
 
     @property
@@ -63,6 +64,47 @@ def _weighted_player(players, attr="finishing"):
         return None
     weights = [max(1, getattr(p, attr, 50)) for p in players]
     return random.choices(players, weights=weights, k=1)[0]
+
+
+# ── Lances "de cor" — não mudam placar, só dão vida ao minuto a minuto ──
+_CHANCE_TEMPLATES = (
+    ("⚡ Chute de {a} de fora da área, {gk} defende", "finishing", "goalkeeping"),
+    ("🧤 Cabeceio de {a}, {gk} espalma escanteio", "finishing", "goalkeeping"),
+    ("🚩 Escanteio cobrado, zaga afasta no susto", None, None),
+    ("🔀 Jogada construída por {a}, {b} chuta por cima do gol", "passing", "finishing"),
+    ("🛡️  {a} corta lance perigoso na entrada da área", "defending", None),
+    ("🎯 {a} arrisca de longe, bola passa raspando a trave", "technique", None),
+    ("🏃 Contra-ataque puxado por {a}, mas a zaga se recompõe", "pace", None),
+    ("🧱 Bola na área, {gk} sai bem e afasta o perigo", "goalkeeping", None),
+    ("⚽ {a} driblou dois marcadores e cruzou, ninguém alcançou", "technique", None),
+)
+
+
+def _chances(home, away, h_start, a_start) -> list[LiveEvent]:
+    """Gera ~6-10 lances de texto sem gol — pesa pela força ofensiva relativa,
+    escolhe protagonista por atributo (cai pra finishing se faltar)."""
+    h_atk = getattr(home, "attack_rating", 50) * getattr(home, "morale", 1.0)
+    a_atk = getattr(away, "attack_rating", 50) * getattr(away, "morale", 1.0)
+    total = h_atk + a_atk or 1
+    n = random.randint(6, 10)
+    evs = []
+    for _ in range(n):
+        home_side = random.random() < (h_atk / total)
+        starters, gk_pool, short = (h_start, a_start, abbr(home.name)) if home_side \
+            else (a_start, h_start, abbr(away.name))
+        team = "H" if home_side else "A"
+        tmpl, attr_a, attr_b = random.choice(_CHANCE_TEMPLATES)
+        a = _weighted_player([p for p in starters if p.position in ("FW", "MF")] or starters,
+                             attr_a or "overall")
+        b = _weighted_player([p for p in starters if p.position in ("MF", "FW")] or starters,
+                             attr_b or "overall")
+        gk = next((p for p in gk_pool if p.position == "GK"), None)
+        text = tmpl.format(
+            a=a.name if a else "?", b=b.name if b else "?",
+            gk=gk.name if gk else "goleiro", short=short,
+        )
+        evs.append(LiveEvent(random.randint(2, 88), "chance", team, f"{text} ({short})"))
+    return evs
 
 
 def build_timeline(home, away) -> LiveResult:
@@ -121,6 +163,11 @@ def build_timeline(home, away) -> LiveResult:
             inn = bench[0]
             evs.append(LiveEvent(random.randint(10, 85), "injury", team,
                                  f"🚑 Contusão: {out.name} sai, entra {inn.name} ({short})"))
+            res.injuries.append({"player_id": out.id, "name": out.name,
+                                 "club_id": home.id if team == "H" else away.id})
+
+    # ── Lances sem gol — preenchem minutos vazios, dão clima ──
+    evs.extend(_chances(home, away, h_start, a_start))
 
     # ── Marcos do jogo ──
     evs.append(LiveEvent(0, "kick", "", f"🔵 Bola rolando: {home.name} x {away.name}"))
@@ -163,6 +210,8 @@ def broadcast(res: LiveResult, home, away, spm: float = 1.3):
                     time.sleep(spm * 2)
             elif e.kind == "full":
                 print(f"  90'  {e.text}")
+            elif e.kind == "chance":
+                print(f"  {minute:>2}'  {e.text}")
             else:
                 print(f"  {minute:>2}'  {e.text}")
 
@@ -238,7 +287,7 @@ def narrate_matchday(items, player_club_id, spm: float = 1.0) -> dict:
                 print(f"  {minute:>2}'  ⚽ {abbr(h.name)} {hs}-{as_} {abbr(a.name)}  ({e.text.split('! ')[-1]}){tag}")
             elif e.kind == "red":
                 print(f"  {minute:>2}'  🟥 {e.text}")
-            elif is_player and e.kind in ("yellow", "injury"):
+            elif is_player and e.kind in ("yellow", "injury", "chance"):
                 print(f"  {minute:>2}'  {e.text}")
         if minute == 45:
             scoreboard("Intervalo")

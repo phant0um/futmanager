@@ -46,11 +46,21 @@ def migrate(conn: sqlite3.Connection, current_year: int = 2026):
     _add_col(conn, "players", "loan_fee",       "INTEGER DEFAULT 0")  # taxa mensal de empréstimo
     # Cláusula de rescisão
     _add_col(conn, "players", "release_clause", "INTEGER")  # paga = compra forçada
+    # Listas de mercado (clube disponibiliza o jogador)
+    _add_col(conn, "players", "transfer_listed", "INTEGER DEFAULT 0")  # à venda
+    _add_col(conn, "players", "loan_listed",     "INTEGER DEFAULT 0")  # disponível p/ empréstimo
+    # Forma & condição física (rotação de elenco)
+    _add_col(conn, "players", "form",    "REAL DEFAULT 1.0")      # 0.85–1.15, tendência recente
+    _add_col(conn, "players", "fitness", "INTEGER DEFAULT 100")   # 0-100, condição atual
+    # Renovação de contrato (evita spam de propostas no mesmo ano)
+    _add_col(conn, "players", "renewal_cooldown", "INTEGER DEFAULT 0")  # ano até o qual não renegocia
     # Estádio
     _add_col(conn, "clubs", "capacity", "INTEGER")      # capacidade do estádio
     _add_col(conn, "clubs", "ticket_price", "INTEGER")  # preço atual do ingresso (€)
     # Estado (para estaduais brasileiros)
     _add_col(conn, "clubs", "state", "TEXT")            # SP, RJ, MG, RS...
+    # Treino: foco de desenvolvimento do elenco
+    _add_col(conn, "career", "training_focus", "TEXT DEFAULT 'geral'")  # geral|fisico|tecnico|finalizacao
 
     # ── Tabela career ────────────────────────────────────────────────
     conn.execute("""
@@ -102,6 +112,48 @@ def migrate(conn: sqlite3.Connection, current_year: int = 2026):
     # Calendário rodada a rodada
     _add_col(conn, "career", "current_round", "INTEGER DEFAULT 0")
     _add_col(conn, "career", "estadual_year", "INTEGER DEFAULT 0")  # última temp. com estadual disputado
+    _add_col(conn, "career", "estadual_data", "TEXT")  # JSON: grupos/campeão do estadual da temp. atual
+    _add_col(conn, "career", "declined_offers", "TEXT")  # JSON: [[player_id, club_id, season_year], ...] propostas recusadas
+    # Inbox narrativa — cimento que reúne avisos do board, relatórios de
+    # scout, propostas etc. num só lugar persistente e revisitável
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS inbox_messages (
+            id INTEGER PRIMARY KEY,
+            career_id INTEGER, round INTEGER, kind TEXT,
+            title TEXT, body TEXT, read INTEGER DEFAULT 0,
+            ref_type TEXT, ref_id INTEGER,
+            created_at TEXT DEFAULT (datetime('now'))
+        )
+    """)
+    # Notas rápidas sobre jogadores — reduz carga cognitiva em saves longos
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS player_notes (
+            id INTEGER PRIMARY KEY,
+            career_id INTEGER, player_id INTEGER,
+            text TEXT, tag TEXT, created_round INTEGER
+        )
+    """)
+    # Scouting — relatórios confirmam atributos (sobrescreve faixa do masking)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS scout_reports (
+            id INTEGER PRIMARY KEY,
+            career_id INTEGER, player_id INTEGER,
+            confirmed_attrs TEXT,   -- JSON: ["pace","finishing",...]
+            confidence INTEGER,     -- 0-100, exibido no relatório
+            created_round INTEGER,
+            UNIQUE(career_id, player_id)
+        )
+    """)
+    # Lesões reais — persistente, c/ recuperação semana a semana e cirurgia
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS injuries (
+            id INTEGER PRIMARY KEY,
+            career_id INTEGER, player_id INTEGER, club_id INTEGER,
+            kind TEXT, weeks_total INTEGER, weeks_left INTEGER,
+            surgery INTEGER DEFAULT 0, status TEXT DEFAULT 'active',
+            season_year INTEGER, round_occurred INTEGER
+        )
+    """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS fixtures (
             id INTEGER PRIMARY KEY,
@@ -110,6 +162,9 @@ def migrate(conn: sqlite3.Connection, current_year: int = 2026):
             played INTEGER DEFAULT 0, home_goals INTEGER, away_goals INTEGER
         )
     """)
+    # Cartões por partida (para somar na classificação)
+    for col in ("home_yellows", "home_reds", "away_yellows", "away_reds"):
+        _add_col(conn, "fixtures", col, "INTEGER DEFAULT 0")
     # Copas mata-mata intercaladas (br=Copa do Brasil, lib=Libertadores, sul=Sul-Americana)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS copa (

@@ -17,6 +17,18 @@ def _slug(name: str) -> str:
     return (s or "save")[:40]
 
 
+def _ensure_schema(db_file: Path):
+    """Roda a migração de carreira no arquivo do save (idempotente — só
+    altera o que falta). Cobre o caso de saves/templates copiados antes
+    de uma versão mais nova adicionar colunas (ex.: form/fitness/contratos)."""
+    from db.migrate_career import migrate
+    c = sqlite3.connect(db_file)
+    try:
+        migrate(c)
+    finally:
+        c.close()
+
+
 def new_save(label: str) -> str:
     """Cria save: copia o template do mundo → saves/<slug>.db. Ativa-o. Retorna slug."""
     slug = _slug(label)
@@ -28,6 +40,7 @@ def new_save(label: str) -> str:
         slug = f"{base}_{n}"
         dest = paths.saves_dir() / f"{slug}.db"
     shutil.copy2(paths.template_db(), dest)
+    _ensure_schema(dest)
     paths.set_active_save(slug)
     return slug
 
@@ -69,7 +82,9 @@ def list_saves() -> list[dict]:
 
 
 def load_save(slug: str) -> bool:
-    if (paths.saves_dir() / f"{slug}.db").exists():
+    f = paths.saves_dir() / f"{slug}.db"
+    if f.exists():
+        _ensure_schema(f)
         paths.set_active_save(slug)
         return True
     return False

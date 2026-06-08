@@ -22,7 +22,10 @@ def _load_league_clubs(conn, league_id):
             strength=p["strength"], finishing=p["finishing"], passing=p["passing"],
             defending=p["defending"], goalkeeping=p["goalkeeping"],
             stamina=p["stamina"], mental=p["mental"], overall=p["overall"],
-            source=p["source"] or "") for p in prows]
+            source=p["source"] or "", age=p["age"] or 0,
+            form=p["form"] if p["form"] is not None else 1.0,
+            fitness=p["fitness"] if p["fitness"] is not None else 100,
+            ) for p in prows]
         c = Club(id=r["id"], name=r["name"], short_name=r["name"][:12],
                  league_id=r["league_id"], prestige=r["prestige"])
         c.players = players
@@ -98,18 +101,42 @@ def _club_morale(conn, career, club_id) -> float:
     return max(0.85, min(1.15, m))
 
 
+def _update_player_condition(conn, club):
+    """Atualiza forma + fadiga do elenco após uma rodada (só persiste p/ clubes
+    carregados via _load_league_clubs — em geral só o do manager, p/ minimizar writes).
+    Titulares cansam (conforme stamina); reservas recuperam. Forma sobe/desce com
+    desempenho do time e regride à média — mesmo idioma de _update_morale."""
+    xi_ids = {p.id for p in club.lineup}
+    won = club.morale > 1.0  # aproximação: time em boa fase joga melhor e ganha mais
+    for p in club.players:
+        if p.id in xi_ids:
+            drain = max(2, 9 - (p.stamina or 50) // 12)
+            fitness = max(15, (p.fitness or 100) - drain)
+            target = 1.04 if won else 0.985
+        else:
+            fitness = min(100, (p.fitness or 100) + 14)
+            target = p.form or 1.0
+        form = (p.form or 1.0) + (target - (p.form or 1.0)) * 0.25
+        form = max(0.85, min(1.15, form))
+        conn.execute("UPDATE players SET form=?, fitness=? WHERE id=?",
+                     (round(form, 3), int(fitness), p.id))
+
+
 def standings(conn, career):
     """Classificação da temporada corrente a partir das partidas já jogadas."""
     lid = league_id_of(conn, career["manager_club_id"])
     clubs = conn.execute("SELECT id, name FROM clubs WHERE league_id=?", (lid,)).fetchall()
     tab = {r["id"]: Standing(club_id=r["id"], club_name=r["name"]) for r in clubs}
     rows = conn.execute("""
-        SELECT home_id, away_id, home_goals, away_goals FROM fixtures
+        SELECT home_id, away_id, home_goals, away_goals,
+               COALESCE(home_yellows,0) hy, COALESCE(home_reds,0) hr,
+               COALESCE(away_yellows,0) ay, COALESCE(away_reds,0) ar
+        FROM fixtures
         WHERE career_id=? AND season_year=? AND played=1
     """, (career["id"], career["season_year"])).fetchall()
     for r in rows:
         if r["home_id"] in tab:
-            tab[r["home_id"]].update(r["home_goals"], r["away_goals"])
+            tab[r["home_id"]].update(r["home_goals"], r["away_goals"], r["hy"], r["hr"])
         if r["away_id"] in tab:
-            tab[r["away_id"]].update(r["away_goals"], r["home_goals"])
+            tab[r["away_id"]].update(r["away_goals"], r["home_goals"], r["ay"], r["ar"])
     return sorted(tab.values(), key=lambda s: (s.points, s.gd, s.gf), reverse=True)

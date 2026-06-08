@@ -1218,7 +1218,10 @@ def _load_squad_players(conn, club_id):
         strength=p["strength"], finishing=p["finishing"], passing=p["passing"],
         defending=p["defending"], goalkeeping=p["goalkeeping"],
         stamina=p["stamina"], mental=p["mental"], overall=p["overall"],
-        source=p["source"] or "",
+        source=p["source"] or "", age=p["age"] or 0,
+        wage=p["wage"] or 0, contract_until=p["contract_until"],
+        form=p["form"] if p["form"] is not None else 1.0,
+        fitness=p["fitness"] if p["fitness"] is not None else 100,
     ) for p in rows]
 
 

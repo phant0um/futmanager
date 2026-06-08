@@ -67,15 +67,32 @@ def _growth_factor(age: int) -> float:
     return -1.6                    # 38+: queda forte
 
 
-def develop_player(conn, player_row, rng: random.Random, train_bonus: float = 0.0):
+# Foco de treino → atributos beneficiados com bônus extra de crescimento
+TRAINING_FOCUS_ATTRS = {
+    "fisico":      ("pace", "strength", "stamina"),
+    "tecnico":     ("technique", "passing", "defending"),
+    "finalizacao": ("finishing", "technique", "mental"),
+    "geral":       tuple(ATTR_COLS),   # sem viés — comportamento padrão
+}
+
+
+def develop_player(conn, player_row, rng: random.Random, train_bonus: float = 0.0,
+                   focus: str = "geral"):
     """
     Atualiza overall e atributos conforme idade + potencial.
     train_bonus: ganho extra de desenvolvimento (treino do clube do jogador).
+    focus: foco do CT — favorece crescimento de um grupo de atributos
+           (geral|fisico|tecnico|finalizacao). Só vale para jogadores em
+           crescimento (factor > 0) — veteranos não "aprendem" mais com treino.
     """
     pid, age, overall, potential, pos = player_row
     overall = overall or 60
     potential = potential or overall
     factor = _growth_factor(age)
+    biased = set(TRAINING_FOCUS_ATTRS.get(focus, ATTR_COLS))
+    # bônus de foco escala com o quanto o jogador ainda cresce — treino não
+    # transforma veterano em craque
+    focus_bonus = train_bonus * 0.6 * max(0.0, factor)
 
     if factor > 0:
         # Cresce em direção ao potencial; quanto mais perto, mais devagar
@@ -92,17 +109,20 @@ def develop_player(conn, player_row, rng: random.Random, train_bonus: float = 0.
     else:
         delta = 0
 
-    if delta == 0:
+    if delta == 0 and focus_bonus <= 0:
         return
 
     new_overall = max(35, min(99, overall + delta))
 
-    # Aplica delta proporcional aos atributos (mantém perfil da posição)
+    # Aplica delta proporcional aos atributos (mantém perfil da posição);
+    # atributos do foco do CT recebem um extra
     updates = {}
     for col in ATTR_COLS:
         cur = conn.execute(f"SELECT {col} FROM players WHERE id=?", (pid,)).fetchone()[0] or 50
         # Atributos seguem o delta com leve variação
         adj = delta + rng.choice([-1, 0, 0, 1])
+        if col in biased:
+            adj += round(focus_bonus + rng.uniform(0, 0.5))
         updates[col] = max(20, min(99, cur + adj))
 
     set_clause = ", ".join(f"{c}=?" for c in ATTR_COLS)
@@ -274,6 +294,76 @@ def update_market_values(conn):
     conn.commit()
 
 
+# ─── Acesso & queda (Brasileirão A↔B↔C↔D) ────────────────────────────────────
+
+PROMO_RELEGATION_N = 4   # 4 sobem / 4 caem entre divisões adjacentes (regra real)
+
+
+def apply_promotion_relegation(conn, season_year: int, manager_club_id: int,
+                               manager_league_id: int, manager_table: list) -> dict | None:
+    """
+    Acesso/queda entre Brasileirão A-B-C-D ao fim da temporada: os 4 últimos de
+    cada divisão trocam de lugar com os 4 primeiros da divisão de baixo (mesmo
+    formato do Brasileirão real). A divisão D não tem queda (não existe nível
+    abaixo no jogo).
+
+    A liga do técnico usa a tabela já simulada (`manager_table`); as demais
+    — que não rodam rodada-a-rodada na carreira — são simuladas inteiras em
+    memória (sem persistir fixtures) só para apurar a classificação final.
+
+    Retorna {'promoted': bool, 'league_name': str} se o clube do jogador mudou
+    de divisão, senão None.
+    """
+    from engine.season import League
+    from engine.calendar import _load_league_clubs
+
+    leagues = conn.execute("""
+        SELECT l.id, l.level, l.name FROM leagues l
+        JOIN countries co ON co.id=l.country_id
+        WHERE co.code='BR' AND l.level BETWEEN 1 AND 4
+        ORDER BY l.level
+    """).fetchall()
+    by_level = {lg["level"]: lg for lg in leagues}
+    if len(by_level) < 2:
+        return None
+
+    tables = {}
+    for lg in leagues:
+        lid, level = lg["id"], lg["level"]
+        if lid == manager_league_id:
+            tables[level] = manager_table
+            continue
+        clubs = _load_league_clubs(conn, lid)
+        if len(clubs) < 2 * PROMO_RELEGATION_N:
+            tables[level] = None
+            continue
+        lgobj = League("L", clubs, str(season_year))
+        lgobj.simulate_all()
+        tables[level] = lgobj.get_table()
+
+    moves = {}  # club_id -> novo league_id
+    for lvl in sorted(by_level)[:-1]:
+        up_tab, down_tab = tables.get(lvl), tables.get(lvl + 1)
+        if not up_tab or not down_tab:
+            continue
+        for s in up_tab[-PROMO_RELEGATION_N:]:
+            moves[s.club_id] = by_level[lvl + 1]["id"]
+        for s in down_tab[:PROMO_RELEGATION_N]:
+            moves[s.club_id] = by_level[lvl]["id"]
+
+    for club_id, new_lid in moves.items():
+        conn.execute("UPDATE clubs SET league_id=? WHERE id=?", (new_lid, club_id))
+    conn.commit()
+
+    if manager_club_id in moves:
+        new_lid = moves[manager_club_id]
+        levels = {lg["id"]: lg["level"] for lg in leagues}
+        names = {lg["id"]: lg["name"] for lg in leagues}
+        return {"promoted": levels[new_lid] < levels[manager_league_id],
+                "league_name": names[new_lid]}
+    return None
+
+
 # ─── Transição de temporada (orquestrador) ───────────────────────────────────
 
 @dataclass
@@ -282,31 +372,36 @@ class SeasonReport:
     retired_notable: list
     newgens_created: int
     top_newgens: list
+    ai_transfers: int
 
 
 def advance_season(conn, season_year: int, seed: int | None = None,
                    manager_club_id: int | None = None,
-                   training_level: int = 2) -> SeasonReport:
+                   training_level: int = 2, training_focus: str = "geral") -> SeasonReport:
     """
     Avança uma temporada completa:
       age+1 → develop → retire → newgens → market values
     manager_club_id: clube do jogador — excluído do auto-renew de contratos.
     training_level (1-5): intensidade do CT — desenvolve mais o elenco do jogador.
+    training_focus: geral|fisico|tecnico|finalizacao — direciona quais atributos
+                    crescem mais com o treino do clube do jogador.
     """
     rng = random.Random(seed if seed is not None else random.randint(0, 2**31))
 
     # 1. Envelhece todos os ativos
     conn.execute("UPDATE players SET age = age + 1 WHERE retired = 0")
 
-    # 2. Desenvolve atributos (treino dá bônus ao clube do jogador)
+    # 2. Desenvolve atributos (treino dá bônus + foco ao clube do jogador)
     train_bonus = max(0.0, (training_level - 2) * 0.6)   # nível 2 = neutro
     players = conn.execute("""
         SELECT id, age, overall, potential, position, club_id
         FROM players WHERE retired = 0
     """).fetchall()
     for p in players:
-        bonus = train_bonus if (manager_club_id and p[5] == manager_club_id) else 0.0
-        develop_player(conn, p[:5], rng, train_bonus=bonus)
+        mine = bool(manager_club_id and p[5] == manager_club_id)
+        bonus = train_bonus if mine else 0.0
+        f = training_focus if mine else "geral"
+        develop_player(conn, p[:5], rng, train_bonus=bonus, focus=f)
     conn.commit()
 
     # 3. Aposentadorias
@@ -319,6 +414,11 @@ def advance_season(conn, season_year: int, seed: int | None = None,
 
     # 5. Valores de mercado
     update_market_values(conn)
+
+    # 5b. Janela de transferências IA — clubes grandes assediam jovens dos
+    #     pequenos, fortalece elencos rivais ao longo das temporadas (dificuldade)
+    from engine.transfer import ai_transfer_window
+    n_ai_transfers = ai_transfer_window(conn, manager_club_id or -1, rng)
 
     # 6. Retorna empréstimos vencidos ao clube dono
     new_year = season_year + 1
@@ -358,4 +458,5 @@ def advance_season(conn, season_year: int, seed: int | None = None,
         retired_notable=retired,
         newgens_created=n_newgens,
         top_newgens=top_newgens,
+        ai_transfers=n_ai_transfers,
     )
