@@ -537,6 +537,7 @@ def _web_league_round(conn, career):
                  (cr + 1, career["id"]))
     conn.commit()
     _notify_incoming_offers(conn, get_active_career(conn))
+    _notify_media(conn, career, your)
     tab = CAL.standings(conn, career)
     pos = next((i for i, s in enumerate(tab, 1) if s.club_id == cid), None)
     return {"ok": True, "kind": "league", "round": cr + 1, "n": nr, "your": your,
@@ -626,6 +627,10 @@ def play_round_live(conn):
                  (cr + 1, career["id"]))
     conn.commit()
     _notify_incoming_offers(conn, get_active_career(conn))
+    your_match = next((m for m in matches if m["is_player"]), None)
+    if your_match:
+        _notify_media(conn, career, {"home": your_match["home"], "away": your_match["away"],
+                                     "hg": your_match["hg"], "ag": your_match["ag"]})
     # ordena: jogo do humano primeiro
     matches.sort(key=lambda m: 0 if m["is_player"] else 1)
     return {"ok": True, "kind": "round_live", "round": cr + 1, "n": nr,
@@ -1135,6 +1140,18 @@ def api_market(c, position=None, max_price=None, min_ovr=0, max_ovr=99,
                     "flags": "".join(flags)})
     return {"ok": True, "players": out, "count": len(out),
             "money": car["money"], "money_fmt": fmt_money(car["money"])}
+
+
+def _notify_media(conn, career, your):
+    """Posta na inbox a manchete da rodada — kind='media' (preenche infra
+    que já existia ociosa: `inbox.KIND_LABELS["media"]` sem gerador).
+    `round_media` é determinístico e auto-limita (0-1 peça/rodada, só
+    quando há fato notável — resultado elástico ou sequência)."""
+    from engine.media import round_media
+    from engine.inbox import add_message
+    for piece in round_media(conn, career, your):
+        add_message(conn, career["id"], career["current_round"] or 0, "media",
+                    piece["title"], piece["body"])
 
 
 def _notify_incoming_offers(conn, career):

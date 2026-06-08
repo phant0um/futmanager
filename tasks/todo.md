@@ -239,6 +239,35 @@ sem gol: chutes pra fora, defesas, escanteios, ataques perigosos.
   "subindo" com atributos corretos do foco (Ritmo/Força p/ foco físico),
   veteranos "caindo" com texto de declínio. Rebuild `.app` ok.
 
+## Fase C do GDD CM03/04 — Módulo de mídia — [x] FEITO
+(plano: `~/.claude/plans/refactored-discovering-liskov.md`)
+
+- `inbox.KIND_LABELS["media"]` já existia mas NINGUÉM gerava mensagem desse
+  `kind` — infra ociosa. `engine/media.py` (novo, puro) preenche: deriva
+  manchete a partir de dados que JÁ EXISTEM (placar da própria rodada via
+  `fixtures`, sequência de V/E/D do clube) — zero estado novo, zero toque
+  em simulação/dinheiro. `round_media` retorna 0-1 peça/rodada:
+  - **Resultado elástico** (`_match_headline`): goleada feita (≥3 gols de
+    saldo) → "🔥 Goleada!", vexame sofrido → "😬 Vexame".
+  - **Sequência** (`_streak_story`): vitórias/derrotas seguidas ou
+    invencibilidade — **só em marcos** (3, 5, 8, 12, 16, 20...), não toda
+    rodada enquanto dura (mesmo erro de design já visto e corrigido em
+    `incoming_offers` — "fato novo" vs "fato em curso", senão vira spam:
+    1ª versão sem marco gerou notícia idêntica 4 rodadas seguidas).
+  Determinístico via `hash(career:round:"media")`, candidatos priorizados
+  (resultado da rodada > sequência histórica).
+- `gameapi._notify_media` — plugado nos 2 pontos de `_notify_*` (mesmo de
+  injury/offers/board): `_web_league_round` (modo simular rápido, usa `your`)
+  e `play_round_live` (modo ao vivo, monta dict equivalente de `matches`).
+- **Sem painel novo** — inbox já filtra por `kind`/label, reusa infra 100%.
+- Testado headless: 30 rodadas ao vivo → 9 manchetes (8 únicas, sem
+  repetição de "fato em curso"); 15 rodadas modo rápido → 4 manchetes
+  corretas; determinismo confirmado (mesma seed → mesmo texto). Rebuild
+  `.app` ok.
+
+**Status: Fases A/B/C do GDD CM03/04 completas** — squad dynamics, feedback
+de treino e mídia, os 3 pilares novos do GDD sobre a base já implementada.
+
 **Nota:** `play_round_live` (modo "ao vivo") é o único caminho que gera
 `LiveResult`/eventos de lesão — `_web_league_round` (modo "simular rápido",
 usado por `api_play`) chama `simulate_match` sem timeline, então só
