@@ -754,7 +754,7 @@ class App(tk.Tk):
             if p["fitness"] < 50:
                 tags.append("tired")
             tv.insert("", "end", iid=str(p["id"]), tags=tuple(tags), values=(
-                p["position"], p["name"], p["age"], p["overall"], p["potential"] or "—",
+                p["role"], p["name"], p["age"], p["overall"], p["potential"] or "—",
                 f"{p['fitness']}%", f"{p['form']:.2f}",
                 p["value_fmt"], p["wage_fmt"], p["contract"] or "—"))
         tv.tag_configure("loan", foreground=DIM)
@@ -803,7 +803,7 @@ class App(tk.Tk):
         head = tk.Frame(self.panel, bg=BG)
         head.pack(fill="x", padx=24, pady=(12, 6))
         tk.Label(head, text=p["name"], fg=TXT, bg=BG, font=(F, 19, "bold")).pack(anchor="w")
-        sub = (f"{p['position']}  ·  {p['age']} anos  ·  {p['nationality'] or '—'}  ·  "
+        sub = (f"{p['role_label']} ({p['position']})  ·  {p['age']} anos  ·  {p['nationality'] or '—'}  ·  "
                f"{p['club_name']}  ·  OVR {p['overall']}  ·  POT {p['potential'] or '—'}")
         tk.Label(head, text=sub, fg=DIM, bg=BG, font=(F, 12)).pack(anchor="w", pady=(2, 0))
         if not p["is_own"] and not (p["transfer_listed"] or p["loan_listed"]):
@@ -1194,22 +1194,26 @@ class App(tk.Tk):
                                               -self._by_id[i]["ovr"]))
         for pid in self._bench_order:
             p = self._by_id[pid]
-            self.lb_bench.insert("end", f"{p['pos']:<3} {p['name'][:18]:<18} {p['ovr']}")
+            self.lb_bench.insert("end", f"{p['role']:<3} {p['name'][:18]:<18} {p['ovr']}")
         avg = round(sum(self._by_id[i]["ovr"] for i in self._xi_ids) / 11, 1) if len(self._xi_ids) == 11 else 0
         self.lbl_avg.config(text=f"Média do XI: {avg}")
 
     def _pitch_token(self, parent, p):
+        # Cartão claro sobre o gramado escuro — alto contraste, lê de longe
+        # (era verde-escuro sobre verde-escuro, quase ilegível). Selecionado
+        # vira dourado, igual ao destaque já usado no resto da GUI.
         selected = p["id"] == self._sel_id
-        bg = GOLD if selected else "#173a1d"
-        fg = "#16201b" if selected else "#eafff0"
+        bg = GOLD if selected else PANEL
+        fg = TXT
         last = p["name"].split()[-1][:11]
         fit = p.get("fitness", 100)
         dot = "🟢" if fit >= 75 else ("🟡" if fit >= 50 else "🔴")
-        b = tk.Button(parent, text=f"{last}\n{p['pos']} · {p['ovr']}  {dot}{fit}%",
+        b = tk.Button(parent, text=f"{last}\n{p['role']} · {p['ovr']}  {dot}{fit}%",
                       command=lambda i=p["id"]: self._select_slot(i),
                       bg=bg, fg=fg, font=(F, 10, "bold"), relief="flat", bd=0,
                       width=12, height=2, cursor="hand2",
-                      activebackground=GOLD, activeforeground="#16201b")
+                      activebackground=GOLD, activeforeground=TXT,
+                      highlightthickness=2, highlightbackground="#173a1d")
         b.pack(side="left", padx=6)
 
     def _select_slot(self, pid):
@@ -1322,7 +1326,7 @@ class App(tk.Tk):
     def _render_market(self):
         self._market = {str(p["id"]): p for p in self._mkt_rows}
         key, rev = self._mkt_sort
-        keymap = {"name": "name", "pos": "pos", "nat": "nat", "age": "age", "ovr": "ovr",
+        keymap = {"name": "name", "pos": "role", "nat": "nat", "age": "age", "ovr": "ovr",
                   "pot": "pot", "club": "club", "asking": "asking", "clause": "clause", "flags": "flags"}
         kf = keymap.get(key, "ovr")
         rows = sorted(self._mkt_rows, key=lambda p: (p.get(kf) is None, p.get(kf)), reverse=rev)
@@ -1330,7 +1334,7 @@ class App(tk.Tk):
             self.tv_market.delete(i)
         for p in rows:
             self.tv_market.insert("", "end", iid=str(p["id"]), values=(
-                p["name"], p["pos"], p["nat"], p["age"], p["ovr"], p["pot"] or "—",
+                p["name"], p["role"], p["nat"], p["age"], p["ovr"], p["pot"] or "—",
                 p["club"], p["asking_fmt"], p["clause_fmt"], p["flags"]))
 
     def _sort_market(self, col):
@@ -1343,6 +1347,22 @@ class App(tk.Tk):
         if not sel:
             return
         p = self._market[sel[0]]
+        # Empréstimo é negócio diferente — sem taxa de compra/agente, banca
+        # % do salário + valor mensal ao clube dono. Listado só p/ empréstimo
+        # não pode passar pelo fluxo de transferência definitiva.
+        if p["loan_listed"] and not p["transfer_listed"]:
+            self._negotiate_loan(p)
+            return
+        if p["loan_listed"] and p["transfer_listed"]:
+            choice = messagebox.askyesnocancel(
+                "Tipo de proposta",
+                f"{p['name']} está disponível tanto para venda quanto para empréstimo.\n\n"
+                "Sim = transferência definitiva\nNão = empréstimo\nCancelar = voltar")
+            if choice is None:
+                return
+            if choice is False:
+                self._negotiate_loan(p)
+                return
         offer = simpledialog.askinteger(
             "Negociar", f"{p['name']} ({p['ovr']}) — {p['club']}\n\n"
             f"Valor: {p['value_fmt']}\nPede: {p['asking_fmt']}\nCláusula: {p['clause_fmt']}\n\n"
@@ -1365,6 +1385,44 @@ class App(tk.Tk):
                 self._negotiate_terms(p, r["value"])
         else:
             messagebox.showinfo("Recusado", f"{p['club']} recusou a oferta. Pede ao menos {r and G.fmt_money(r['asking'])}.")
+
+    def _negotiate_loan(self, p):
+        """Empréstimo: negócio diferente da transferência — sem taxa de
+        compra nem agente. Você banca um % do salário (pago ao clube dono)
+        + um valor mensal fixo. Cobertura total precisa bater o mínimo
+        exigido pra qualidade do jogador (engine.transfer.loan_min_coverage)."""
+        t = with_conn(lambda c: G.api_loan_terms(c, p["id"]))
+        if not t.get("ok"):
+            messagebox.showinfo("Empréstimo", t.get("msg", "Indisponível."))
+            return
+        wage_pct = simpledialog.askinteger(
+            "Empréstimo — % do salário",
+            f"{t['name']} (OVR {t['overall']}) — salário atual {t['wage_fmt']}/ano\n\n"
+            f"Cobertura mínima exigida pelo clube dono: {t['min_coverage']}%\n"
+            "(% do salário bancado + taxa mensal anualizada ÷ salário)\n\n"
+            "Quanto % do salário você banca (0-100)?",
+            parent=self, minvalue=0, maxvalue=100, initialvalue=50)
+        if wage_pct is None:
+            return
+        monthly_fee_k = simpledialog.askinteger(
+            "Empréstimo — taxa mensal",
+            f"Taxa mensal a pagar ao clube dono (em €K, pode ser 0):",
+            parent=self, minvalue=0, initialvalue=0)
+        if monthly_fee_k is None:
+            return
+        monthly_fee = monthly_fee_k * 1000
+        yr_cost = int((t["wage"] or 0) * wage_pct / 100 + monthly_fee * 12)
+        if not messagebox.askyesno(
+                "Confirmar proposta de empréstimo",
+                f"Propor empréstimo de {t['name']}:\n\n"
+                f"Você banca {wage_pct}% do salário + {G.fmt_money(monthly_fee)}/mês ao clube dono\n"
+                f"Custo estimado: ~{G.fmt_money(yr_cost)}/ano\n\n"
+                "Enviar proposta?"):
+            return
+        r = with_conn(lambda c: G.api_loan_in(c, p["id"], wage_pct, monthly_fee))
+        messagebox.showinfo("Empréstimo", r["msg"])
+        if r["ok"]:
+            self.show_hub()
 
     def _negotiate_terms(self, p, fee):
         """Etapa 2/3 — depois do clube vendedor topar a taxa, JOGADOR
@@ -1435,7 +1493,7 @@ class App(tk.Tk):
         tv = self._table(cols, [heads[c] for c in cols], widths)
         for p in data["players"]:
             tv.insert("", "end", iid=str(p["id"]), values=(
-                p["name"], p["pos"], p["age"], p["ovr"], p["wage_fmt"],
+                p["name"], p["role"], p["age"], p["ovr"], p["wage_fmt"],
                 p["contract_until"], p["demand_wage_fmt"] + f" ({p['demand_years']}a)", p["form"]))
         self.tv_contracts = tv
         tv.bind("<Double-1>", lambda e: self._negotiate_renewal())
@@ -1453,7 +1511,7 @@ class App(tk.Tk):
         win = tk.Toplevel(self)
         win.title("Renovar contrato")
         win.configure(bg=PANEL)
-        tk.Label(win, text=f"{p['name']} ({p['pos']}, {p['age']}a, OVR {p['ovr']})",
+        tk.Label(win, text=f"{p['name']} ({p['role']}, {p['age']}a, OVR {p['ovr']})",
                  fg=TXT, bg=PANEL, font=(F, 13, "bold")).pack(padx=18, pady=(14, 2))
         tk.Label(win, text=f"Salário atual: {p['wage_fmt']}   ·   Pretensão: {p['demand_wage_fmt']} "
                            f"por {p['demand_years']} anos",
@@ -1507,7 +1565,7 @@ class App(tk.Tk):
         rows = list(self._ctr_rows.values())
         if not rows:
             return
-        names = [f"{p['pos']} {p['name']} ({p['ovr']}) — termina {p['contract_until']}" for p in rows]
+        names = [f"{p['role']} {p['name']} ({p['ovr']}) — termina {p['contract_until']}" for p in rows]
         win = tk.Toplevel(self)
         win.title("Deixar sair")
         win.configure(bg=PANEL)

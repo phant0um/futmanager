@@ -82,17 +82,21 @@ def api_squad(c):
     car = get_active_career(c)
     if not car:
         return []
+    from engine.knowledge import cm_role
     rows = c.execute("""
         SELECT id, name, position, age, overall, potential, value, wage,
-               contract_until, loan_from_club, form, fitness
+               contract_until, loan_from_club, form, fitness,
+               pace, technique, strength, finishing, passing, defending, stamina
         FROM players WHERE club_id=? AND retired=0
         ORDER BY CASE position WHEN 'GK' THEN 1 WHEN 'DF' THEN 2
                                WHEN 'MF' THEN 3 WHEN 'FW' THEN 4 END, overall DESC
     """, (car["manager_club_id"],)).fetchall()
     out = []
     for p in rows:
+        role, role_label = cm_role(p["position"], dict(p))
         out.append({
             "id": p["id"], "name": p["name"], "position": p["position"] or "?",
+            "role": role, "role_label": role_label,
             "age": p["age"] or 0, "overall": p["overall"], "potential": p["potential"],
             "value": p["value"], "value_fmt": fmt_money(p["value"]),
             "wage_fmt": fmt_money(p["wage"]),
@@ -107,7 +111,7 @@ def api_player_detail(c, player_id):
     """Perfil completo de 1 jogador — atributos passam pelo masking
     (engine/knowledge): elenco próprio e listados veem tudo, resto vê
     faixa/oculto conforme prestígio do clube do técnico."""
-    from engine.knowledge import known_attrs, ATTRS, ATTR_LABELS
+    from engine.knowledge import known_attrs, ATTRS, ATTR_LABELS, cm_role
     from engine.scouting import confirmed_attrs, scout_cost
     car = get_active_career(c)
     p = c.execute("""
@@ -124,6 +128,7 @@ def api_player_detail(c, player_id):
         row = c.execute("SELECT prestige FROM clubs WHERE id=?", (car["manager_club_id"],)).fetchone()
         buyer_prestige = row["prestige"] if row else None
     raw = {a: p[a] for a in ATTRS}
+    role, role_label = cm_role(p["position"], raw)
     confirmed = confirmed_attrs(c, car["id"], player_id) if car else set()
     masked = known_attrs(raw, car["id"] if car else 0, player_id,
                          is_own=is_own, is_listed=is_listed, prestige=buyer_prestige,
@@ -147,6 +152,7 @@ def api_player_detail(c, player_id):
         "scout_cost": scout_cost(p["overall"]),
         "scout_cost_fmt": fmt_money(scout_cost(p["overall"])),
         "id": p["id"], "name": p["name"], "position": p["position"] or "?",
+        "role": role, "role_label": role_label,
         "age": p["age"] or 0, "nationality": p["nationality"],
         "overall": p["overall"], "potential": p["potential"],
         "club_id": p["club_id"], "club_name": p["club_name"] or "—",
@@ -952,8 +958,13 @@ def api_lineup(c):
     xi_ids = {p.id for p in xi}
     ok, msg = validate_lineup(xi, formation)
 
+    from engine.knowledge import cm_role
     def pj(p, on):
+        attrs = {a: getattr(p, a, 50) for a in
+                 ("pace", "technique", "strength", "finishing", "passing", "defending", "stamina")}
+        role, role_label = cm_role(p.position, attrs)
         return {"id": p.id, "name": p.name, "pos": p.position, "ovr": p.overall,
+                "role": role, "role_label": role_label,
                 "age": getattr(p, "age", 0) or 0, "on": on,
                 "fitness": getattr(p, "fitness", 100), "form": round(getattr(p, "form", 1.0), 2)}
     xi_out = [pj(p, True) for p in xi]
@@ -1063,6 +1074,7 @@ def api_market(c, position=None, max_price=None, min_ovr=0, max_ovr=99,
                                (car["manager_club_id"],)).fetchone()[0]
     q = """SELECT p.id, p.name, p.position, p.age, p.overall, p.potential, p.value,
                   p.release_clause, p.nationality, p.transfer_listed, p.loan_listed,
+                  p.pace, p.technique, p.strength, p.finishing, p.passing, p.defending, p.stamina,
                   c.name club, c.prestige seller_prestige
            FROM players p JOIN clubs c ON c.id=p.club_id
            WHERE p.retired=0 AND p.club_id<>? AND p.loan_from_club IS NULL
@@ -1085,8 +1097,10 @@ def api_market(c, position=None, max_price=None, min_ovr=0, max_ovr=99,
     q += " ORDER BY p.overall DESC, p.potential DESC LIMIT ?"
     params.append(limit)
     rows = c.execute(q, params).fetchall()
+    from engine.knowledge import cm_role
     out = []
     for r in rows:
+        role, role_label = cm_role(r["position"], dict(r))
         # asking_and_clause(conn, id, career) reconsultava value/release_clause
         # já presentes em `r` — N+1 query que deixava o Mercado lento (até 400
         # SELECTs extras por render). Calcula direto a partir da própria linha.
@@ -1097,11 +1111,14 @@ def api_market(c, position=None, max_price=None, min_ovr=0, max_ovr=99,
         if r["transfer_listed"]: flags.append("V")   # à venda
         if r["loan_listed"]: flags.append("E")       # empréstimo
         out.append({"id": r["id"], "name": r["name"], "pos": r["position"] or "?",
+                    "role": role, "role_label": role_label,
                     "age": r["age"] or 0, "ovr": r["overall"], "pot": r["potential"],
                     "nat": r["nationality"] or "?", "club": r["club"],
                     "value": r["value"], "value_fmt": fmt_money(r["value"]),
                     "asking": asking, "asking_fmt": fmt_money(asking),
                     "clause": clause, "clause_fmt": fmt_money(clause),
+                    "transfer_listed": bool(r["transfer_listed"]),
+                    "loan_listed": bool(r["loan_listed"]),
                     "flags": "".join(flags)})
     return {"ok": True, "players": out, "count": len(out),
             "money": car["money"], "money_fmt": fmt_money(car["money"])}
@@ -1153,6 +1170,34 @@ def api_incoming_offers(c):
     for o in incoming_offers(c, car):
         out.append({**o, "amount_fmt": fmt_money(o["amount"])})
     return out
+
+
+def api_loan_terms(c, player_id):
+    """Dados pra montar a proposta de empréstimo: salário do alvo + cobertura
+    mínima exigida pelo clube dono (cresce com o overall)."""
+    from engine.transfer import loan_min_coverage
+    p = c.execute("SELECT id, name, overall, wage, club_id, loan_from_club FROM players WHERE id=?",
+                  (player_id,)).fetchone()
+    if not p:
+        return {"ok": False, "msg": "Jogador não encontrado."}
+    if p["loan_from_club"] is not None:
+        return {"ok": False, "msg": "Esse jogador já está emprestado."}
+    return {"ok": True, "name": p["name"], "overall": p["overall"],
+            "wage": p["wage"] or 0, "wage_fmt": fmt_money(p["wage"] or 0),
+            "min_coverage": loan_min_coverage(p["overall"] or 60)}
+
+
+def api_loan_in(c, player_id, wage_pct, monthly_fee):
+    """Propõe empréstimo — você banca wage_pct% do salário do clube dono +
+    taxa mensal. Diferente de transferência definitiva: sem taxa de compra,
+    sem agente, prazo de 1 temporada (ver engine.transfer.loan_in)."""
+    from engine.transfer import loan_in
+    car = get_active_career(c)
+    if not car:
+        return {"ok": False, "msg": "Sem carreira ativa."}
+    ok, msg = loan_in(c, car, int(player_id), car["season_year"],
+                      wage_pct=int(wage_pct), monthly_fee=int(monthly_fee))
+    return {"ok": ok, "msg": msg}
 
 
 def api_respond_offer(c, player_id, club_id, accept):
@@ -1256,12 +1301,15 @@ def api_contracts(c):
     if not car:
         return {"ok": False}
     cid = car["manager_club_id"]
+    from engine.knowledge import cm_role
     rows = CT.expiring_players(c, cid, car["season_year"])
     out = []
     for r in rows:
         demand_wage, demand_years = CT._player_demand(c, r["id"], car)
+        role, role_label = cm_role(r["position"], dict(r))
         out.append({
             "id": r["id"], "name": r["name"], "pos": r["position"] or "?",
+            "role": role, "role_label": role_label,
             "age": r["age"] or 0, "ovr": r["overall"], "pot": r["potential"],
             "wage": r["wage"] or 0, "wage_fmt": fmt_money(r["wage"] or 0),
             "contract_until": r["contract_until"],

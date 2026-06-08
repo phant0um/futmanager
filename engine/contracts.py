@@ -20,7 +20,8 @@ def expiring_players(conn, club_id: int, season_year: int, within: int = EXPIRY_
     (e fora do cooldown de renegociação)."""
     return conn.execute("""
         SELECT id, name, position, age, overall, potential, value, wage,
-               contract_until, form, fitness
+               contract_until, form, fitness,
+               pace, technique, strength, finishing, passing, defending, stamina
         FROM players
         WHERE club_id=? AND retired=0 AND loan_from_club IS NULL
           AND contract_until IS NOT NULL AND contract_until <= ?

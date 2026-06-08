@@ -66,3 +66,46 @@ def known_attrs(attrs: dict, career_id: int, player_id: int, *,
         hi = min(99, center + band // 2)
         out[a] = f"{lo}-{hi}" if lo != hi else lo
     return out
+
+
+# ─── Papel em campo (estilo Championship Manager) ───────────────────────────
+# Hoje `position` é só GK/DF/MF/FW — granularidade rasa pra quem migrou de CM,
+# que distinguia Zagueiro/Lateral, Volante/Meia/Armador, Ponta/Centroavante.
+# Camada de EXIBIÇÃO pura: deriva o "papel" a partir dos atributos reais já
+# existentes (mesmo princípio do `position` em si — campo já é mostrado sem
+# máscara em todo canto; isto só refina, não expõe nada novo). Não toca banco,
+# geração, simulação ou lineup — escalação continua agrupando por GK/DF/MF/FW.
+ROLES = {
+    "GK":  ("GOL", "Goleiro"),
+    "ZAG": ("ZAG", "Zagueiro"),
+    "LAT": ("LAT", "Lateral"),
+    "VOL": ("VOL", "Volante"),
+    "MC":  ("MC",  "Meio-campo"),
+    "MEI": ("MEI", "Meia-atacante"),
+    "PON": ("PON", "Ponta"),
+    "ATA": ("ATA", "Centroavante"),
+}
+
+
+def cm_role(position: str, attrs: dict) -> tuple[str, str]:
+    """(código curto, label completo) — granularidade CM a partir de
+    pace/technique/strength/finishing/passing/defending/stamina reais."""
+    g = lambda k: attrs.get(k) or 50
+    if position == "GK":
+        return ROLES["GK"]
+    if position == "DF":
+        key = "LAT" if g("pace") > g("defending") else "ZAG"
+        return ROLES[key]
+    if position == "MF":
+        defending, passing, finishing = g("defending"), g("passing"), g("finishing")
+        if defending >= passing and defending >= finishing:
+            key = "VOL"
+        elif finishing > passing:
+            key = "MEI"
+        else:
+            key = "MC"
+        return ROLES[key]
+    if position == "FW":
+        key = "PON" if g("pace") > g("finishing") else "ATA"
+        return ROLES[key]
+    return (position or "?", position or "—")

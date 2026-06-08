@@ -154,6 +154,42 @@ sem gol: chutes pra fora, defesas, escanteios, ataques perigosos.
 - Testado headless: 12 jogadores listados geraram assédio em 15 rodadas →
   exatamente 12 mensagens (1:1 com `notified_offers`, sem duplicata).
 
+## Extra — 3 ajustes pedidos pelo user — [x] FEITO
+
+1. **Empréstimo com janela própria** (era a mesma da transferência
+   definitiva — confuso, são negócios diferentes). `engine.transfer.loan_in`
+   já existia (puro, usado só na CLI) — faltava expor: `gameapi.api_loan_terms`
+   (salário do alvo + cobertura mínima ∝ overall) + `api_loan_in` (banca
+   wage_pct% do salário + taxa mensal, sem taxa de compra/agente, 1 temporada).
+   `gui._negotiate` agora detecta `loan_listed`/`transfer_listed` e roteia:
+   só-empréstimo → `_negotiate_loan` direto; ambos → pergunta qual tipo;
+   só-venda → fluxo de transferência de sempre. `_negotiate_loan` = wizard
+   de 2 perguntas (% salário, taxa mensal) + confirmação com custo anual
+   estimado. Testado: recusa por cobertura baixa, aceita e persiste
+   club_id/loan_from_club/loan_until/wage_pct/fee corretos.
+
+2. **Cores da Escalação** — cartão do titular era verde-escuro (#173a1d)
+   sobre gramado verde-escuro (#2f7d3a): baixíssimo contraste, "quase não
+   dá pra ler". Trocado pra cartão claro (PANEL branco / texto TXT escuro,
+   igual ao resto da GUI) com borda sutil — pop nítido contra o gramado,
+   mesma convenção visual de CM/FM (cards claros sobre campo verde).
+   Selecionado continua dourado (GOLD), só que agora com texto escuro legível.
+
+3. **Posições estilo Championship Manager** (user escolheu escopo
+   "só exibição" via pergunta — manter `position` GK/DF/MF/FW intocado no
+   banco/geração/simulação/lineup, granularidade rasa só na hora de mostrar).
+   `engine/knowledge.cm_role(position, attrs)` — pura, deriva papel a partir
+   dos atributos REAIS já existentes (mesmo princípio de `position` em si,
+   que já é mostrado sem máscara): GOL/Goleiro, ZAG/Zagueiro ou LAT/Lateral
+   (pace > defending), VOL/Volante, MC/Meio-campo ou MEI/Meia-atacante
+   (compara defending/passing/finishing), PON/Ponta ou ATA/Centroavante
+   (pace > finishing). Plugado em `api_squad`/`api_market`/`api_player_detail`/
+   `api_lineup`/`api_contracts` — telas de Elenco/Mercado/Perfil/Escalação/
+   Contratos agora mostram o papel CM em vez do código genérico de 2 letras.
+   Testado: distribuição plausível no elenco (MC 14, ZAG 8, LAT 7, PON 7...).
+
+**Rebuild `.app` ok** (todos os 3 itens, mesmo build).
+
 **Nota:** `play_round_live` (modo "ao vivo") é o único caminho que gera
 `LiveResult`/eventos de lesão — `_web_league_round` (modo "simular rápido",
 usado por `api_play`) chama `simulate_match` sem timeline, então só
