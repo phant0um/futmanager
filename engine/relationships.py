@@ -107,23 +107,21 @@ def seed_relationships(conn, career, club_id: int) -> int:
 
 def notable_relations(conn, career, player_id: int) -> list[dict]:
     """Lista vínculos de um jogador, com nome do parceiro/rival — pro perfil."""
+    # 1 query com JOIN — era 1 SELECT extra por vínculo (N+1)
     rows = conn.execute("""
         SELECT r.kind, r.affinity,
-               CASE WHEN r.player_a_id=? THEN r.player_b_id ELSE r.player_a_id END AS other_id
+               CASE WHEN r.player_a_id=? THEN r.player_b_id ELSE r.player_a_id END AS other_id,
+               p.name AS other_name
         FROM relationships r
+        JOIN players p
+          ON p.id = (CASE WHEN r.player_a_id=? THEN r.player_b_id ELSE r.player_a_id END)
         WHERE r.career_id=? AND (r.player_a_id=? OR r.player_b_id=?)
         ORDER BY ABS(r.affinity) DESC
-    """, (player_id, career["id"], player_id, player_id)).fetchall()
-    out = []
-    for r in rows:
-        other = conn.execute("SELECT id, name FROM players WHERE id=?", (r["other_id"],)).fetchone()
-        if not other:
-            continue
-        out.append({
-            "kind": r["kind"], "label": KIND_LABELS.get(r["kind"], r["kind"]),
-            "affinity": r["affinity"], "other_id": other["id"], "other_name": other["name"],
-        })
-    return out
+    """, (player_id, player_id, career["id"], player_id, player_id)).fetchall()
+    return [{
+        "kind": r["kind"], "label": KIND_LABELS.get(r["kind"], r["kind"]),
+        "affinity": r["affinity"], "other_id": r["other_id"], "other_name": r["other_name"],
+    } for r in rows]
 
 
 def unit_cohesion(conn, career, player_ids: list[int]) -> float:

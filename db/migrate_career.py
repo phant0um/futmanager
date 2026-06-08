@@ -233,6 +233,20 @@ def migrate(conn: sqlite3.Connection, current_year: int = 2026):
     # ── Cláusulas de rescisão ───────────────────────────────────────
     assign_release_clauses(conn)
 
+    # ── Índices — zero existiam antes (full table scan em 6k+ jogadores
+    # a cada SELECT por club_id/career_id). Aditivo/idempotente, cobre os
+    # WHERE mais frequentes vistos no código (grep confirmado):
+    conn.executescript("""
+        CREATE INDEX IF NOT EXISTS idx_players_club_id   ON players(club_id);
+        CREATE INDEX IF NOT EXISTS idx_players_retired   ON players(retired);
+        CREATE INDEX IF NOT EXISTS idx_fixtures_lookup   ON fixtures(career_id, season_year, round_idx);
+        CREATE INDEX IF NOT EXISTS idx_injuries_lookup   ON injuries(career_id, player_id, status);
+        CREATE INDEX IF NOT EXISTS idx_inbox_career_round ON inbox_messages(career_id, round);
+        CREATE INDEX IF NOT EXISTS idx_inbox_career_read ON inbox_messages(career_id, read);
+        CREATE INDEX IF NOT EXISTS idx_league_table_lookup ON league_table(career_id, league_id, season_year);
+        CREATE INDEX IF NOT EXISTS idx_coaches_career    ON coaches(career_id, is_player);
+        CREATE INDEX IF NOT EXISTS idx_coaches_club      ON coaches(club_id);
+    """)
     conn.commit()
     print("✓ Migração completa.")
 

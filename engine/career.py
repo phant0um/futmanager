@@ -116,9 +116,14 @@ def develop_player(conn, player_row, rng: random.Random, train_bonus: float = 0.
 
     # Aplica delta proporcional aos atributos (mantém perfil da posição);
     # atributos do foco do CT recebem um extra
+    # Busca todos atributos de uma vez (era 1 SELECT por atributo — 9 round-trips
+    # por jogador × 6k+ jogadores no fim de temporada)
+    cur_row = conn.execute(
+        f"SELECT {', '.join(ATTR_COLS)} FROM players WHERE id=?", (pid,)
+    ).fetchone()
     updates = {}
     for col in ATTR_COLS:
-        cur = conn.execute(f"SELECT {col} FROM players WHERE id=?", (pid,)).fetchone()[0] or 50
+        cur = cur_row[col] or 50
         # Atributos seguem o delta com leve variação
         adj = delta + rng.choice([-1, 0, 0, 1])
         if col in biased:

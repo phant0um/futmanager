@@ -273,3 +273,51 @@ de treino e mídia, os 3 pilares novos do GDD sobre a base já implementada.
 usado por `api_play`) chama `simulate_match` sem timeline, então só
 acontece lesão real jogando ao vivo. Mesma assimetria pré-existente que
 já valia pra cartões/lances de texto — não é regressão, é o desenho atual.
+
+## Revisão de código + otimizações (pedido do user — "subagentes vejam e otimizem")
+
+Despachei 3 Explore agents (engine perf / gameapi+gui perf / schema+índices).
+Verifiquei CADA achado contra código real (grep/Read) antes de aplicar —
+**Agent 3 fabricou** 4 "índices existentes" que não existem (`grep -rn
+"CREATE INDEX"` zero matches no código; os 4 que aparecem no save são
+herdados do template-base, não criados pela migração atual).
+
+Aplicado (verificado real, baixo risco, testado headless):
+- **Índices** (`db/migrate_career.py`) — banco não tinha NENHUM índice
+  próprio (full scan em 6k+ jogadores a cada `WHERE club_id=`/`career_id=`).
+  Adicionei 9 `CREATE INDEX IF NOT EXISTS` aditivos/idempotentes cobrindo
+  os WHERE mais frequentes (grep-confirmados): `players(club_id)`,
+  `players(retired)`, `fixtures(career_id,season_year,round_idx)`,
+  `injuries(career_id,player_id,status)`, `inbox_messages(career_id,round)`,
+  `inbox_messages(career_id,read)`, `league_table(career_id,league_id,
+  season_year)`, `coaches(career_id,is_player)`, `coaches(club_id)`.
+- **`develop_player`** (`engine/career.py`) — trocou 9 `SELECT <attr> FROM
+  players WHERE id=?` (1 por atributo) por 1 único `SELECT <todos attrs>`.
+  9x menos round-trips × 6k+ jogadores no fim de temporada.
+- **`notable_relations`** (`engine/relationships.py`) — era N+1 (1 SELECT
+  de nome por vínculo); virou 1 query com `JOIN players`.
+- **Bug real encontrado e corrigido**: `_notify_media` (que eu adicionei
+  na Fase C) usava `career` desatualizado — `current_round` ficava 1
+  rodada atrás de `_notify_incoming_offers`/medical (que re-buscam career
+  após o `UPDATE current_round=cr+1`). Mensagens de mídia ficavam marcadas
+  com round errado (inconsistente com convenção `cr+1` de medical/market).
+  Corrigido reusando o `fresh = get_active_career(conn)` já buscado —
+  zero query extra, tag de round agora consistente. Confirmado headless:
+  `medical`/`market`/`media` todos tagged `cr+1` no mesmo round.
+
+Investigado e descartado (achado de agent não procede / risco > ganho):
+- "Loop `_club_morale` sobre clubes" (Agent 2) — na real é só os ~20 clubes
+  DA LIGA do humano (`CAL._load_league_clubs`), não 14k. Necessário (toda
+  partida da rodada precisa de moral dos 2 clubes pra simular). Não é
+  hotspot real — não mexi.
+- "Índices existentes" (Agent 3) — fabricado, ver acima.
+- Redundância `get_active_career(conn)` após `UPDATE current_round` —
+  NÃO é redundante: é necessário pra pegar `current_round` fresco
+  (o `career` em memória ainda tem o valor antigo, pré-commit). Confirmei
+  isso é exatamente o padrão correto — usei o mesmo `fresh` pra também
+  corrigir o bug do `_notify_media` acima.
+
+Testado headless (`/tmp/test_opt.db`): `develop_player`/`notable_relations`/
+`unit_cohesion` corretos pós-batch; 25 rodadas jogadas (15 + 10), sem
+spam de mídia (3 únicas), tags de round consistentes, 15 rodadas em 0.61s.
+Rebuild `.app` ok.

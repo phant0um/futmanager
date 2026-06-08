@@ -536,8 +536,10 @@ def _web_league_round(conn, career):
     conn.execute("UPDATE career SET current_round=?, updated_at=datetime('now') WHERE id=?",
                  (cr + 1, career["id"]))
     conn.commit()
-    _notify_incoming_offers(conn, get_active_career(conn))
-    _notify_media(conn, career, your)
+    fresh = get_active_career(conn)
+    _notify_incoming_offers(conn, fresh)
+    _notify_media(conn, fresh, your)  # era `career` (stale current_round) — divergia
+                                      # do round usado por _notify_incoming_offers/medical (cr+1)
     tab = CAL.standings(conn, career)
     pos = next((i for i, s in enumerate(tab, 1) if s.club_id == cid), None)
     return {"ok": True, "kind": "league", "round": cr + 1, "n": nr, "your": your,
@@ -626,11 +628,12 @@ def play_round_live(conn):
     conn.execute("UPDATE career SET current_round=?, updated_at=datetime('now') WHERE id=?",
                  (cr + 1, career["id"]))
     conn.commit()
-    _notify_incoming_offers(conn, get_active_career(conn))
+    fresh = get_active_career(conn)
+    _notify_incoming_offers(conn, fresh)
     your_match = next((m for m in matches if m["is_player"]), None)
     if your_match:
-        _notify_media(conn, career, {"home": your_match["home"], "away": your_match["away"],
-                                     "hg": your_match["hg"], "ag": your_match["ag"]})
+        _notify_media(conn, fresh, {"home": your_match["home"], "away": your_match["away"],
+                                    "hg": your_match["hg"], "ag": your_match["ag"]})
     # ordena: jogo do humano primeiro
     matches.sort(key=lambda m: 0 if m["is_player"] else 1)
     return {"ok": True, "kind": "round_live", "round": cr + 1, "n": nr,
