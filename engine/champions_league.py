@@ -1,10 +1,10 @@
 """
 Champions League — Competição europeia inter-ligas (em BRL)
-  16 clubes (top 4 de EN/ES/IT/FR + 5º de 2 maiores)
+  16 clubes (top 4 de cada uma das 4 grandes ligas: EN/ES/IT/FR)
   Fase de grupos (4 grupos × 4 clubes, round-robin) + knockout (8→4→2→1)
 """
 from __future__ import annotations
-from db.models import Club, Standing
+from db.models import Club, Player, Standing
 from engine.simulation import simulate_match, simulate_penalties
 from engine.season import League
 
@@ -16,21 +16,49 @@ PRIZE_BY_STAGE = {
     "final": 200_000_000,    # Final (winner)
 }
 STAGES = [("Fase de Grupos", 4), ("Oitavas", 8), ("Semifinal", 4), ("Final", 2)]
-TRIGGERS = [7, 12, 18, 25, 32]  # Round triggers for each stage
+TRIGGERS = [7, 12, 18, 25]  # Round trigger por stage_idx (0=grupos .. 3=final)
+
+
+def _club_obj(conn, club_id):
+    """Monta Club com elenco pra simulação — espelha gameapi._club_obj
+    (não importamos gameapi aqui pra evitar import circular engine↔gameapi)."""
+    r = conn.execute("SELECT * FROM clubs WHERE id=?", (club_id,)).fetchone()
+    if not r:
+        return None
+    ps = conn.execute(
+        "SELECT * FROM players WHERE club_id=? AND retired=0 ORDER BY overall DESC LIMIT 23",
+        (club_id,)
+    ).fetchall()
+    players = [Player(id=p["id"], name=p["name"], position=p["position"] or "MF",
+        nationality=p["nationality"] or "", birth_date=p["birth_date"], club_id=p["club_id"],
+        pace=p["pace"], technique=p["technique"], strength=p["strength"], finishing=p["finishing"],
+        passing=p["passing"], defending=p["defending"], goalkeeping=p["goalkeeping"],
+        stamina=p["stamina"], mental=p["mental"], overall=p["overall"], source=p["source"] or "")
+        for p in ps]
+    c = Club(id=r["id"], name=r["name"], short_name=r["name"][:12],
+             league_id=r["league_id"] or 0, prestige=r["prestige"])
+    c.players = players
+    return c
 
 
 def _qualified_ids(conn) -> list[int]:
-    """16 clubes qualificados: top 4 de EN/ES/IT/FR + 5º de 2 maiores."""
-    # Top 4 de cada liga europeia (EN, ES, IT, FR)
-    top_4 = conn.execute("""
-        SELECT c.id FROM clubs c
-        JOIN leagues l ON l.id = c.league_id
-        JOIN countries co ON co.id = l.country_id
-        WHERE co.code IN ('EN','ES','IT','FR') AND l.level = 1
-        ORDER BY c.prestige DESC LIMIT 16
+    """16 clubes qualificados: top 4 de cada uma das 4 grandes ligas (EN/ES/IT/FR).
+
+    Usa ROW_NUMBER particionado por país pra garantir 4 por liga — em vez de
+    um ORDER BY prestige global, que podia entupir o torneio com 10 clubes
+    ingleses e 0 franceses.
+    """
+    rows = conn.execute("""
+        SELECT id FROM (
+            SELECT c.id AS id,
+                   ROW_NUMBER() OVER (PARTITION BY co.code ORDER BY c.prestige DESC) AS rk
+            FROM clubs c
+            JOIN leagues l ON l.id = c.league_id
+            JOIN countries co ON co.id = l.country_id
+            WHERE co.code IN ('EN','ES','IT','FR') AND l.level = 1
+        ) WHERE rk <= 4
     """).fetchall()
-    ids = [r[0] for r in top_4]
-    return ids[:16]
+    return [r[0] for r in rows]
 
 
 def ensure_group_stage(conn, career):
@@ -44,6 +72,10 @@ def ensure_group_stage(conn, career):
 
     qual = _qualified_ids(conn)
     if len(qual) < 16:
+        # Save não tem 4 clubes nível-1 em cada uma das 4 ligas — Champions
+        # fica fora do ar pra essa career (em vez de sortear grupo incompleto).
+        print(f"[champions_league] qualificação incompleta ({len(qual)}/16 clubes) "
+              f"— Champions League não disponível nesta career")
         return
 
     import random
@@ -84,32 +116,28 @@ def group_standings(conn, career, group_idx: int) -> list[Standing]:
     for r in rows:
         for cid in [r["home_id"], r["away_id"]]:
             if cid not in club_pts:
-                club_pts[cid] = {"pts": 0, "pf": 0, "pa": 0, "played": 0}
+                club_pts[cid] = {"pts": 0, "pf": 0, "pa": 0, "played": 0, "w": 0, "d": 0, "l": 0}
 
         if r["played"]:
             hg, ag = r["home_goals"], r["away_goals"]
-            club_pts[r["home_id"]]["pf"] += hg
-            club_pts[r["home_id"]]["pa"] += ag
-            club_pts[r["away_id"]]["pf"] += ag
-            club_pts[r["away_id"]]["pa"] += hg
-            club_pts[r["home_id"]]["played"] += 1
-            club_pts[r["away_id"]]["played"] += 1
+            home, away = club_pts[r["home_id"]], club_pts[r["away_id"]]
+            home["pf"] += hg; home["pa"] += ag; home["played"] += 1
+            away["pf"] += ag; away["pa"] += hg; away["played"] += 1
 
             if hg > ag:
-                club_pts[r["home_id"]]["pts"] += 3
+                home["pts"] += 3; home["w"] += 1; away["l"] += 1
             elif hg < ag:
-                club_pts[r["away_id"]]["pts"] += 3
+                away["pts"] += 3; away["w"] += 1; home["l"] += 1
             else:
-                club_pts[r["home_id"]]["pts"] += 1
-                club_pts[r["away_id"]]["pts"] += 1
+                home["pts"] += 1; away["pts"] += 1; home["d"] += 1; away["d"] += 1
 
     standings = []
     for cid, stat in sorted(club_pts.items(), key=lambda x: (-x[1]["pts"], -(x[1]["pf"]-x[1]["pa"]))):
         club = conn.execute("SELECT id, name FROM clubs WHERE id=?", (cid,)).fetchone()
         standings.append(Standing(
             club_id=cid, club_name=club["name"], played=stat["played"],
-            wins=stat["pts"]//3, draws=(stat["pts"]%3), losses=0,  # Simplified; exact calc needed
-            gf=stat["pf"], ga=stat["pa"], points=stat["pts"]
+            wins=stat["w"], draws=stat["d"], losses=stat["l"],
+            gf=stat["pf"], ga=stat["pa"]
         ))
     return standings
 
@@ -148,24 +176,19 @@ def play_stage(conn, career, stage_idx: int):
 
     for match_row in rows:
         mid, h_id, a_id = match_row["id"], match_row["home_id"], match_row["away_id"]
-        h = conn.execute("SELECT * FROM clubs WHERE id=?", (h_id,)).fetchone()
-        a = conn.execute("SELECT * FROM clubs WHERE id=?", (a_id,)).fetchone()
+        h_obj = _club_obj(conn, h_id)
+        a_obj = _club_obj(conn, a_id)
 
-        if not h or not a:
+        if not h_obj or not a_obj:
             continue
-
-        h_obj = Club.from_row(h)
-        a_obj = Club.from_row(a)
-        h_obj.players = conn.execute("SELECT * FROM players WHERE club_id=?", (h_id,)).fetchall()
-        a_obj.players = conn.execute("SELECT * FROM players WHERE club_id=?", (a_id,)).fetchall()
 
         res = simulate_match(h_obj, a_obj)
         hg, ag = res.home_goals, res.away_goals
 
         # On draws in KO stages, penalties
         if stage_idx > 0 and hg == ag:
-            pen = simulate_penalties()
-            winner_id = h_id if pen else a_id
+            hp, ap = simulate_penalties(h_obj, a_obj)
+            winner_id = h_id if hp > ap else a_id
         else:
             winner_id = h_id if hg > ag else a_id
 
@@ -196,6 +219,20 @@ def play_stage(conn, career, stage_idx: int):
                 VALUES (?,?,?,?,?,?,?,?,0)
             """, (career["id"], career["season_year"], "cl", next_stage_idx, -1, match_idx//2, h_id, a_id))
         conn.commit()
+
+
+def is_participant(conn, career) -> bool:
+    """True se o clube do manager está entre os 16 classificados desta temporada.
+
+    Sem isso, qualquer manager EN/ES/IT/FR/NL/PT seria forçado a 'jogar' rodadas
+    da Champions mesmo com seu clube de fora — turno gasto numa partida alheia.
+    """
+    n = conn.execute("""
+        SELECT COUNT(*) FROM championships
+        WHERE career_id=? AND season_year=? AND comp='cl'
+          AND (home_id=? OR away_id=?)
+    """, (career["id"], career["season_year"], career["manager_club_id"], career["manager_club_id"])).fetchone()[0]
+    return n > 0
 
 
 def due_stage(conn, career, current_round) -> tuple[int, int] | None:

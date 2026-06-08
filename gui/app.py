@@ -1192,7 +1192,8 @@ class App(tk.Tk):
         rf.pack(side="left", fill="both")
         rf.pack_propagate(False)
         tk.Label(rf, text="RESERVAS", fg=DIM, bg=BG, font=(F, 11, "bold")).pack(anchor="w")
-        tk.Label(rf, text="arraste do campo", fg=DIM, bg=BG, font=(F, 9)).pack(anchor="w")
+        tk.Label(rf, text="selecione reserva, arraste titular p/ aqui = troca", fg=DIM, bg=BG,
+                 font=(F, 9), wraplength=240, justify="left").pack(anchor="w")
         self.lb_bench = tk.Listbox(rf, bg=PANEL, fg=TXT, font=("Menlo", 12), relief="flat",
                                    selectbackground=GREEN_D, activestyle="none",
                                    highlightthickness=1, highlightbackground=LINE)
@@ -1209,37 +1210,24 @@ class App(tk.Tk):
         w, h = self.pitch_canvas.winfo_width() or 800, self.pitch_canvas.winfo_height() or 600
 
         # Grid positions: 4-3-3 layout (11 slots)
-        # Top row: FW (2) | Middle: MF (3) | Bottom: DF (4) + GK (1) + SUB (1)
+        # Top row: FW (2) | Middle: MF (3) | Bottom: DF (4) + GK (1)
         slot_size = 80
-        slot_spacing = 20
-        self._slot_rects = {}  # canvas_id -> (pid, pos_x, pos_y)
-        self._token_ids = {}   # pid -> canvas_id
+        self._slots = []       # [{"pid","x","y","pos"}] — slot occupied by each starter
+        self._token_ids = {}   # pid -> canvas tag (rect+text grouped under same tag)
 
-        # FW row (top, 2 players)
-        fw_players = [p for p in [self._by_id.get(pid) for pid in self._xi_ids] if p and p["pos"] == "FW"]
-        for i, p in enumerate(fw_players[:2]):
-            x = w // 2 - 90 + i * 160
-            y = 60
-            self._draw_token(x, y, p, slot_size)
-
-        # MF row (middle, 3 players)
-        mf_players = [p for p in [self._by_id.get(pid) for pid in self._xi_ids] if p and p["pos"] == "MF"]
-        for i, p in enumerate(mf_players[:3]):
-            x = w // 2 - 160 + i * 150
-            y = 220
-            self._draw_token(x, y, p, slot_size)
-
-        # DF row (lower, 4 players)
-        df_players = [p for p in [self._by_id.get(pid) for pid in self._xi_ids] if p and p["pos"] == "DF"]
-        for i, p in enumerate(df_players[:4]):
-            x = w // 2 - 240 + i * 160
-            y = 380
-            self._draw_token(x, y, p, slot_size)
-
-        # GK + SUB (bottom)
-        gk_players = [p for p in [self._by_id.get(pid) for pid in self._xi_ids] if p and p["pos"] == "GK"]
-        if gk_players:
-            self._draw_token(w // 2 - 100, h - 90, gk_players[0], slot_size)
+        rows = [
+            ("FW", [p for p in [self._by_id.get(pid) for pid in self._xi_ids] if p and p["pos"] == "FW"][:2],
+             w // 2 - 90, 60, 160),
+            ("MF", [p for p in [self._by_id.get(pid) for pid in self._xi_ids] if p and p["pos"] == "MF"][:3],
+             w // 2 - 160, 220, 150),
+            ("DF", [p for p in [self._by_id.get(pid) for pid in self._xi_ids] if p and p["pos"] == "DF"][:4],
+             w // 2 - 240, 380, 160),
+            ("GK", [p for p in [self._by_id.get(pid) for pid in self._xi_ids] if p and p["pos"] == "GK"][:1],
+             w // 2 - 40, h - 90, 0),
+        ]
+        for pos_label, players, x0, y, dx in rows:
+            for i, p in enumerate(players):
+                self._draw_token(x0 + i * dx, y, p, slot_size, pos_label)
 
         # Bench
         self.lb_bench.delete(0, "end")
@@ -1254,70 +1242,84 @@ class App(tk.Tk):
         avg = round(sum(self._by_id[i]["ovr"] for i in self._xi_ids) / 11, 1) if len(self._xi_ids) == 11 else 0
         self.lbl_avg.config(text=f"Média: {avg}")
 
-    def _draw_token(self, x, y, player, size):
-        """Draw draggable player token on canvas."""
+    def _draw_token(self, x, y, player, size, pos_label):
+        """Draw draggable player token (rect+label grouped under one tag, moves as unit)."""
         if not player:
             return
+        pid = player["id"]
+        tag = f"tok{pid}"
         last = player["name"].split()[-1][:8]
         fit = player.get("fitness", 100)
         dot = "🟢" if fit >= 75 else ("🟡" if fit >= 50 else "🔴")
         text = f"{last}\n{player['ovr']}\n{dot}"
 
-        # Token appearance
-        cid = self.pitch_canvas.create_rectangle(
-            x - size // 2, y - size // 2,
-            x + size // 2, y + size // 2,
-            fill=PANEL, outline=GOLD, width=2
+        self.pitch_canvas.create_rectangle(
+            x - size // 2, y - size // 2, x + size // 2, y + size // 2,
+            fill=PANEL, outline=GOLD, width=2, tags=(tag, "token")
         )
-        tid = self.pitch_canvas.create_text(
-            x, y, text=text, font=(F, 9, "bold"), fill=TXT
+        self.pitch_canvas.create_text(
+            x, y, text=text, font=(F, 9, "bold"), fill=TXT, tags=(tag, "token")
         )
 
-        self._token_ids[player["id"]] = cid
-        self.pitch_canvas.tag_bind(cid, "<Button-1>", lambda e: self._on_pitch_press(e, player["id"], x, y))
+        self._token_ids[pid] = tag
+        self._slots.append({"pid": pid, "x": x, "y": y, "pos": pos_label})
+        self.pitch_canvas.tag_bind(tag, "<Button-1>", lambda e, p=pid: self._on_pitch_press(e, p))
 
-    def _on_pitch_press(self, event, pid=None, orig_x=None, orig_y=None):
-        """Start dragging a player token."""
+    def _on_pitch_press(self, event, pid=None):
+        """Start dragging a player token (no-op on empty grass click)."""
         if pid is None:
-            # Find clicked token
-            items = self.pitch_canvas.find_overlapping(
-                event.x - 10, event.y - 10, event.x + 10, event.y + 10
-            )
-            for item in items:
-                tags = self.pitch_canvas.gettags(item)
-                if "player_token" in tags:
-                    # Find player by canvas item
-                    for p_id, c_id in self._token_ids.items():
-                        if c_id == item:
-                            pid = p_id
-                            break
-        if pid:
-            self._drag_from = pid
-            self._drag_offset = (event.x, event.y)
-            if pid in self._token_ids:
-                self.pitch_canvas.tag_raise(self._token_ids[pid])
+            return
+        self._drag_from = pid
+        self._drag_offset = (event.x, event.y)
+        self.pitch_canvas.tag_raise(self._token_ids[pid])
 
     def _on_pitch_drag(self, event):
-        """Drag player token around canvas."""
-        if self._drag_from and self._drag_from in self._token_ids:
-            cid = self._token_ids[self._drag_from]
-            dx = event.x - self._drag_offset[0]
-            dy = event.y - self._drag_offset[1]
-            self.pitch_canvas.move(cid, dx, dy)
-            self._drag_offset = (event.x, event.y)
+        """Drag token (rect+label move together via shared tag)."""
+        tag = self._token_ids.get(self._drag_from)
+        if not tag:
+            return
+        dx = event.x - self._drag_offset[0]
+        dy = event.y - self._drag_offset[1]
+        self.pitch_canvas.move(tag, dx, dy)
+        self._drag_offset = (event.x, event.y)
 
     def _on_pitch_release(self, event):
-        """Drop player token — validate position compatibility."""
-        if not self._drag_from:
+        """Drop token: bench-zone = substitui (precisa reserva selecionada de
+        mesma posição); pitch = troca com titular do slot mais próximo (mesma
+        posição). Drop inválido sempre volta pro grid via _refresh_pitch."""
+        dragged_pid = self._drag_from
+        self._drag_from = None
+        if not dragged_pid:
+            return
+        dragged = self._by_id.get(dragged_pid)
+
+        if event.x > self.pitch_canvas.winfo_width() - 270:
+            bs = self.lb_bench.curselection()
+            if not bs:
+                messagebox.showinfo("Substituir", "Selecione um reserva na lista antes de arrastar.")
+            else:
+                in_id = self._bench_order[bs[0]]
+                incoming = self._by_id[in_id]
+                if incoming["pos"] != dragged["pos"]:
+                    messagebox.showwarning("Posição incompatível",
+                        f"{incoming['name']} ({incoming['pos']}) não pode substituir "
+                        f"{dragged['name']} ({dragged['pos']}).")
+                else:
+                    self._xi_ids = [in_id if i == dragged_pid else i for i in self._xi_ids]
+            self._refresh_pitch()
             return
 
-        # Check if dropped on bench area (right side)
-        if event.x > self.pitch_canvas.winfo_width() - 270:
-            # Remove from XI
-            if self._drag_from in self._xi_ids:
-                self._xi_ids.remove(self._drag_from)
-
-        self._drag_from = None
+        target = min(self._slots, key=lambda s: (s["x"] - event.x) ** 2 + (s["y"] - event.y) ** 2,
+                     default=None)
+        if target and target["pid"] != dragged_pid:
+            tgt_player = self._by_id.get(target["pid"])
+            if tgt_player["pos"] != dragged["pos"]:
+                messagebox.showwarning("Posição incompatível",
+                    f"{dragged['name']} ({dragged['pos']}) não pode trocar com "
+                    f"{tgt_player['name']} ({tgt_player['pos']}).")
+            else:
+                i1, i2 = self._xi_ids.index(dragged_pid), self._xi_ids.index(target["pid"])
+                self._xi_ids[i1], self._xi_ids[i2] = self._xi_ids[i2], self._xi_ids[i1]
         self._refresh_pitch()
 
     def _change_formation(self):

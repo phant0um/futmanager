@@ -467,7 +467,7 @@ def api_next(conn):
     # Check for Champions League (European manager)
     if country in ("EN", "ES", "IT", "FR", "NL", "PT"):
         CL.ensure_group_stage(conn, car)
-        cl_due = CL.due_stage(conn, car, cr)
+        cl_due = CL.due_stage(conn, car, cr) if CL.is_participant(conn, car) else None
         if cl_due:
             st_idx, gid = cl_due
             stage_name = CL.STAGES[st_idx][0] if st_idx < len(CL.STAGES) else "Desconhecido"
