@@ -155,6 +155,18 @@ def migrate(conn: sqlite3.Connection, current_year: int = 2026):
             season_year INTEGER, round_occurred INTEGER
         )
     """)
+    # Relações entre jogadores — squad dynamics (CM03/04). Geradas 1x por par
+    # relevante (heurística: nacionalidade/idade/setor), afinidade fixa,
+    # só altera leitura/coesão — não toca overall/contrato/simulação direto.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS relationships (
+            id INTEGER PRIMARY KEY,
+            career_id INTEGER, player_a_id INTEGER, player_b_id INTEGER,
+            kind TEXT,            -- amizade | rivalidade | parceria | mentoria
+            affinity INTEGER,     -- -100..100
+            UNIQUE(career_id, player_a_id, player_b_id)
+        )
+    """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS fixtures (
             id INTEGER PRIMARY KEY,

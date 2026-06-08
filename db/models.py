@@ -38,6 +38,7 @@ class Club:
     players: list["Player"] = field(default_factory=list)
     starting_xi: list["Player"] = field(default_factory=list)  # escalação (se vazio, usa top-11)
     morale: float = 1.0      # 0.85–1.15 — sobe com vitórias, cai com derrotas
+    cohesion: float = 1.0    # 0.95–1.05 — afinidade entre titulares (squad dynamics)
     style_atk: float = 1.0   # mentalidade: multiplicador de ataque
     style_def: float = 1.0   # mentalidade: multiplicador de defesa
 

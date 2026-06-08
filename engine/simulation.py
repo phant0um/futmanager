@@ -108,13 +108,18 @@ def simulate_match(home: Club, away: Club, verbose: bool = False) -> MatchResult
     # Moral/forma — atacante embalado rende mais
     home_morale = getattr(home, "morale", 1.0)
     away_morale = getattr(away, "morale", 1.0)
+    # Coesão do XI (squad dynamics — afinidade entre titulares, 0.95–1.05)
+    home_cohesion = getattr(home, "cohesion", 1.0)
+    away_cohesion = getattr(away, "cohesion", 1.0)
     # Estilo tático — ofensivo sobe ataque/baixa defesa; defensivo o inverso
     h_satk = getattr(home, "style_atk", 1.0); h_sdef = getattr(home, "style_def", 1.0)
     a_satk = getattr(away, "style_atk", 1.0); a_sdef = getattr(away, "style_def", 1.0)
 
     # Lambda (gols esperados)
-    lam_home = _expected_goals(home_atk * home_morale * h_satk, away_def * a_sdef, home=True)
-    lam_away = _expected_goals(away_atk * away_morale * a_satk, home_def * h_sdef, home=False)
+    lam_home = _expected_goals(home_atk * home_morale * home_cohesion * h_satk,
+                               away_def * a_sdef, home=True)
+    lam_away = _expected_goals(away_atk * away_morale * away_cohesion * a_satk,
+                               home_def * h_sdef, home=False)
 
     # Simula gols via Poisson
     home_goals = _poisson(lam_home)

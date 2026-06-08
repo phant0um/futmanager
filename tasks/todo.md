@@ -190,6 +190,33 @@ sem gol: chutes pra fora, defesas, escanteios, ataques perigosos.
 
 **Rebuild `.app` ok** (todos os 3 itens, mesmo build).
 
+## Fase A do GDD CM03/04 — Relações entre jogadores (squad dynamics) — [x] FEITO
+(plano: `~/.claude/plans/refactored-discovering-liskov.md`)
+
+- `engine/relationships.py` (novo): tabela `relationships(career_id,
+  player_a_id, player_b_id, kind, affinity)`. `seed_relationships` gera 1x
+  por elenco (idempotente, UNIQUE+INSERT OR IGNORE) — heurística de pares
+  prováveis (mesma nacionalidade/idade próxima/setor tático), score
+  determinístico via `hash(career, par ordenado)`, máx 3 vínculos/jogador
+  (evita N² — 25 jogadores → 300 pares seria ruído). Tipos: amizade/
+  parceria/rivalidade/mentoria (gap idade ≥8 anos), afinidade -100..100.
+  `unit_cohesion` agrega afinidade dos pares presentes no XI num modificador
+  ±5% (mesma escala/uso de `morale`). `notable_relations` lista pro perfil.
+- **Escopo: só elenco do técnico humano** — `seed_relationships`/`unit_cohesion`
+  chamados em `_apply_player_tactics` (mesmo ponto de `style_mults`/XI salvo,
+  rodado 1x por simulação de rodada — custo de I/O em 14k+ jogadores de IA
+  não compensa, mesmo corte de injury/scouting).
+- `db/models.py Club.cohesion` (novo, default 1.0) — plugado em
+  `engine/simulation.simulate_match` igual `morale`/`style_atk` (multiplica
+  `attack`/multiplicador, não reescreve fórmula).
+- `gameapi.api_player_detail` retorna `relations` (só elenco próprio).
+  `_panel_player`: card "🤝 Relações no elenco" — lista parceiro/rival com
+  afinidade (dourado positiva, vermelho rivalidade) + botão "Ver perfil".
+- Testado headless: 62 pares gerados (25 amizade/17 parceria/13 rivalidade/
+  7 mentoria), determinístico (mesmo elenco → mesmos pares/afinidades),
+  idempotente (reseed não duplica), cohesion em 0.95-1.05, 3 rodadas
+  simuladas sem erro e sem duplicar relações. Rebuild `.app` ok.
+
 **Nota:** `play_round_live` (modo "ao vivo") é o único caminho que gera
 `LiveResult`/eventos de lesão — `_web_league_round` (modo "simular rápido",
 usado por `api_play`) chama `simulate_match` sem timeline, então só

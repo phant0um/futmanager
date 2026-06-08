@@ -135,6 +135,10 @@ def api_player_detail(c, player_id):
                          confirmed=confirmed)
     attrs = [{"key": a, "label": ATTR_LABELS[a], "value": masked[a],
               "known": masked[a] != "?", "confirmed": a in confirmed} for a in ATTRS]
+    relations = []
+    if car and is_own:
+        from engine.relationships import notable_relations
+        relations = notable_relations(c, car, player_id)
     injury = None
     if car and is_own:
         from engine.injury import active_injury, surgery_offer, _severity_of
@@ -163,7 +167,7 @@ def api_player_detail(c, player_id):
         "form": round(p["form"] if p["form"] is not None else 1.0, 2),
         "transfer_listed": bool(p["transfer_listed"]),
         "loan_listed": bool(p["loan_listed"]),
-        "is_own": is_own, "attrs": attrs, "injury": injury,
+        "is_own": is_own, "attrs": attrs, "injury": injury, "relations": relations,
     }
 
 
@@ -489,9 +493,14 @@ def api_play(conn):
 def _apply_player_tactics(conn, career, club):
     from ui.career import get_saved_xi
     from engine.lineup import style_mults
+    from engine.relationships import seed_relationships, unit_cohesion
     _, xi = get_saved_xi(conn, career, club.players)
     club.starting_xi = xi
     club.style_atk, club.style_def = style_mults(career["tactic_style"] or "equilibrado")
+    # Squad dynamics — só elenco do técnico humano (custo de I/O em 14k+
+    # jogadores de IA não compensa, mesmo corte de injury/scouting).
+    seed_relationships(conn, career, club.id)
+    club.cohesion = unit_cohesion(conn, career, [p.id for p in xi])
 
 
 def _web_league_round(conn, career):

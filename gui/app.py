@@ -844,6 +844,23 @@ class App(tk.Tk):
             else:
                 tk.Label(care, text="", bg=PANEL).pack(pady=(0, 4))
 
+        # ── Relações (squad dynamics — só elenco próprio) ──
+        rels = p.get("relations") or []
+        if rels:
+            tk.Label(self.panel, text="🤝 Relações no elenco", fg=TXT, bg=BG, font=(F, 13, "bold")) \
+                .pack(anchor="w", padx=24, pady=(4, 6))
+            box = tk.Frame(self.panel, bg=PANEL)
+            box.pack(fill="x", padx=24, pady=(0, 12))
+            for r in rels:
+                color = GOLD if r["affinity"] >= 0 else RED
+                sign = "+" if r["affinity"] >= 0 else ""
+                txt = f"{r['label']} — {r['other_name']}  ({sign}{r['affinity']})"
+                row = tk.Frame(box, bg=PANEL)
+                row.pack(fill="x", padx=12, pady=4)
+                tk.Label(row, text=txt, fg=color, bg=PANEL, font=(F, 11)).pack(side="left")
+                self._btn(row, "Ver perfil", lambda pid=r["other_id"]: self._open_player(pid),
+                          bg=PANEL2, fg=TXT).pack(side="right")
+
         # ── Atributos (com masking) ──
         tk.Label(self.panel, text="Atributos", fg=TXT, bg=BG, font=(F, 13, "bold")) \
             .pack(anchor="w", padx=24, pady=(4, 6))
