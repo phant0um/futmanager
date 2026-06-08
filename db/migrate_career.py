@@ -190,6 +190,19 @@ def migrate(conn: sqlite3.Connection, current_year: int = 2026):
     """)
     _add_col(conn, "copa", "comp", "TEXT DEFAULT 'br'")
 
+    # Champions League — competição europeia inter-ligas (fase de grupos + KO)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS championships (
+            id INTEGER PRIMARY KEY,
+            career_id INTEGER, season_year INTEGER, comp TEXT DEFAULT 'cl',
+            stage_idx INTEGER,  -- 0=groups, 1=quarters, 2=semis, 3=final
+            group_id INTEGER,   -- 0-3 for groups, -1 for KO rounds
+            match_idx INTEGER,
+            home_id INTEGER, away_id INTEGER,
+            played INTEGER DEFAULT 0, home_goals INTEGER, away_goals INTEGER, winner_id INTEGER
+        )
+    """)
+
     # ── Mercado de técnicos ──────────────────────────────────────────
     conn.execute("""
         CREATE TABLE IF NOT EXISTS coaches (

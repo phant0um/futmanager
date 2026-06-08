@@ -452,7 +452,7 @@ def _player_country_state(conn, club_id):
 
 
 def api_next(conn):
-    from engine import calendar as CAL, copa as COPA
+    from engine import calendar as CAL, copa as COPA, champions_league as CL
     car = get_active_career(conn)
     if not car:
         return {"kind": "none"}
@@ -463,6 +463,18 @@ def api_next(conn):
     CAL.ensure_fixtures(conn, car)
     cr = car["current_round"] or 0
     nr = CAL.num_rounds(conn, car)
+
+    # Check for Champions League (European manager)
+    if country in ("EN", "ES", "IT", "FR", "NL", "PT"):
+        CL.ensure_group_stage(conn, car)
+        cl_due = CL.due_stage(conn, car, cr)
+        if cl_due:
+            st_idx, gid = cl_due
+            stage_name = CL.STAGES[st_idx][0] if st_idx < len(CL.STAGES) else "Desconhecido"
+            return {"kind": "champions", "stage": st_idx,
+                    "label": f"Champions League — {stage_name}"}
+
+    # Check for Copa (South American)
     if country in ("BR", "AR"):
         due = COPA.due_comp(conn, car, cr)
         if due:
@@ -488,6 +500,8 @@ def api_play(conn):
         return _web_estadual(conn, car)
     if k == "copa":
         return _web_copa(conn, car, ev["comp"], ev["stage"])
+    if k == "champions":
+        return _web_champions(conn, car, ev["stage"])
     if k == "league":
         return _web_league_round(conn, car)
     if k == "season_end":
@@ -826,6 +840,49 @@ def _web_estadual(conn, career):
             "groups": res.group_tables, "log": res.log[-2:],
             "champion": res.champion.name if res.champion else "?",
             "player_stage": res.player_stage, "prize": prize}
+
+
+def _web_champions(conn, career, stage_idx: int):
+    """Play Champions League stage (group or KO)."""
+    from engine import champions_league as CL
+    cid = career["manager_club_id"]
+
+    CL.play_stage(conn, career, stage_idx)
+
+    # Check if manager's club won/advanced
+    prize = 0
+    player_advanced = False
+    if stage_idx == 0:
+        # Group stage: check if player in top 2
+        groups = conn.execute("""
+            SELECT DISTINCT group_id FROM championships
+            WHERE career_id=? AND season_year=? AND comp='cl' AND stage_idx=0
+        """, (career["id"], career["season_year"])).fetchall()
+        for g in groups:
+            standings = CL.group_standings(conn, career, g[0])
+            if any(s.club_id == cid for s in standings[:2]):
+                player_advanced = True
+                prize = CL.PRIZE_BY_STAGE["group"]
+                break
+    else:
+        # KO stage: check if player won this round
+        won = conn.execute("""
+            SELECT COUNT(*) FROM championships
+            WHERE career_id=? AND season_year=? AND comp='cl' AND stage_idx=? AND winner_id=?
+        """, (career["id"], career["season_year"], stage_idx, cid)).fetchone()[0]
+        if won:
+            player_advanced = True
+            if stage_idx == 3:  # Final winner
+                prize = CL.PRIZE_BY_STAGE["final"]
+                conn.execute("UPDATE career SET money=money+?, reputation=MIN(100,reputation+6), titles=titles+1 WHERE id=?",
+                            (prize, career["id"]))
+            else:
+                prize = CL.PRIZE_BY_STAGE[["group", "quarters", "semis", "final"][min(stage_idx, 2)]]
+                conn.execute("UPDATE career SET money=money+? WHERE id=?", (prize, career["id"]))
+
+    conn.commit()
+    return {"ok": True, "kind": "champions", "stage": stage_idx, "stage_name": CL.STAGES[stage_idx][0],
+            "player_advanced": player_advanced, "prize": prize}
 
 
 def _web_finish_season(conn, career):
