@@ -844,6 +844,22 @@ class App(tk.Tk):
             else:
                 tk.Label(care, text="", bg=PANEL).pack(pady=(0, 4))
 
+        # ── Treino — feedback explicativo (só elenco próprio) ──
+        tr = p.get("training")
+        if tr:
+            tk.Label(self.panel, text="📈 Treino", fg=TXT, bg=BG, font=(F, 13, "bold")) \
+                .pack(anchor="w", padx=24, pady=(4, 6))
+            tbox = tk.Frame(self.panel, bg=PANEL)
+            tbox.pack(fill="x", padx=24, pady=(0, 12))
+            head_txt = (f"Foco do CT: {tr['focus_label']}  ·  Nível {tr['level']}/5"
+                        + (f"  ·  beneficia: {', '.join(tr['boosted_attrs'])}"
+                           if tr["focus"] != "geral" and tr["boosted_attrs"] else ""))
+            tk.Label(tbox, text=head_txt, fg=DIM, bg=PANEL, font=(F, 10)) \
+                .pack(anchor="w", padx=12, pady=(10, 2))
+            trend_color = {"subindo": GREEN, "caindo": RED}.get(tr["trend"], TXT)
+            tk.Label(tbox, text=tr["text"], fg=trend_color, bg=PANEL,
+                     font=(F, 11), wraplength=620, justify="left").pack(anchor="w", padx=12, pady=(0, 10))
+
         # ── Relações (squad dynamics — só elenco próprio) ──
         rels = p.get("relations") or []
         if rels:

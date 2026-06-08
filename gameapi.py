@@ -136,9 +136,12 @@ def api_player_detail(c, player_id):
     attrs = [{"key": a, "label": ATTR_LABELS[a], "value": masked[a],
               "known": masked[a] != "?", "confirmed": a in confirmed} for a in ATTRS]
     relations = []
+    training = None
     if car and is_own:
         from engine.relationships import notable_relations
+        from engine.training_feedback import training_summary
         relations = notable_relations(c, car, player_id)
+        training = training_summary(c, car, player_id)
     injury = None
     if car and is_own:
         from engine.injury import active_injury, surgery_offer, _severity_of
@@ -168,6 +171,7 @@ def api_player_detail(c, player_id):
         "transfer_listed": bool(p["transfer_listed"]),
         "loan_listed": bool(p["loan_listed"]),
         "is_own": is_own, "attrs": attrs, "injury": injury, "relations": relations,
+        "training": training,
     }
 
 

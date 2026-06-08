@@ -217,6 +217,28 @@ sem gol: chutes pra fora, defesas, escanteios, ataques perigosos.
   idempotente (reseed não duplica), cohesion em 0.95-1.05, 3 rodadas
   simuladas sem erro e sem duplicar relações. Rebuild `.app` ok.
 
+## Fase B do GDD CM03/04 — Treino com feedback visível — [x] FEITO
+(plano: `~/.claude/plans/refactored-discovering-liskov.md`)
+
+- Sistema de treino JÁ existia raso (`engine.career.develop_player`/
+  `TRAINING_FOCUS_ATTRS`/`training_level`/`training_focus`, fim de temporada)
+  — escopo reduzido pra **explicar** o que já roda (GDD: "treino precisa
+  explicar progresso"), não recriar como sessões semanais (reescrita grande
+  por pouco ganho perceptível em jogo de texto).
+- `engine/training_feedback.py` (novo, puro): `training_summary` deriva
+  fase de carreira (`_growth_factor` reusado), foco do CT + atributos
+  beneficiados (`TRAINING_FOCUS_ATTRS`/`ATTR_LABELS` reusados), margem até
+  o potencial, e texto explicativo tipo "Foco em Físico — Hugo Martin (17,
+  em formação) deve evoluir Ritmo, Força esta temporada (margem: 14 pts)"
+  ou "Carlos Rossi (33, em declínio) — espere queda natural... treino nível
+  5 ajuda a reduzir o ritmo". Zero estado novo persistido — só leitura.
+- `gameapi.api_player_detail` retorna `training` (só elenco próprio).
+  `_panel_player`: bloco "📈 Treino" — foco/nível/atributos beneficiados +
+  frase explicativa (verde=subindo, vermelho=caindo, neutro=estável).
+- Testado headless: 12 jogadores (8 jovens + 4 veteranos) — todos os jovens
+  "subindo" com atributos corretos do foco (Ritmo/Força p/ foco físico),
+  veteranos "caindo" com texto de declínio. Rebuild `.app` ok.
+
 **Nota:** `play_round_live` (modo "ao vivo") é o único caminho que gera
 `LiveResult`/eventos de lesão — `_web_league_round` (modo "simular rápido",
 usado por `api_play`) chama `simulate_match` sem timeline, então só
