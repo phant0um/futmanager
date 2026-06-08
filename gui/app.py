@@ -1171,55 +1171,77 @@ class App(tk.Tk):
         self.lbl_avg.pack(side="right")
 
         self._by_id = {p["id"]: p for p in data["xi"] + data["bench"]}
-        self._sel_id = None  # titular selecionado no campo
+        self._drag_from = None  # player being dragged
+        self._drag_offset = (0, 0)
 
         body = tk.Frame(self.panel, bg=BG)
         body.pack(fill="both", expand=True, padx=24, pady=10)
-        # ── campo (esquerda)
-        self.pitch = tk.Frame(body, bg="#2f7d3a", highlightbackground=LINE, highlightthickness=1)
-        self.pitch.pack(side="left", fill="both", expand=True, padx=(0, 10))
+
+        # ── Canvas pitch (esquerda) — DRAG-DROP ──
+        pitch_frame = tk.Frame(body, bg="#2f7d3a", highlightbackground=LINE, highlightthickness=1)
+        pitch_frame.pack(side="left", fill="both", expand=True, padx=(0, 10))
+
+        self.pitch_canvas = tk.Canvas(pitch_frame, bg="#2f7d3a", highlightthickness=0)
+        self.pitch_canvas.pack(fill="both", expand=True)
+        self.pitch_canvas.bind("<Button-1>", self._on_pitch_press)
+        self.pitch_canvas.bind("<B1-Motion>", self._on_pitch_drag)
+        self.pitch_canvas.bind("<ButtonRelease-1>", self._on_pitch_release)
+
         # ── reservas (direita)
         rf = tk.Frame(body, bg=BG, width=260)
         rf.pack(side="left", fill="both")
         rf.pack_propagate(False)
         tk.Label(rf, text="RESERVAS", fg=DIM, bg=BG, font=(F, 11, "bold")).pack(anchor="w")
-        tk.Label(rf, text="clique um titular no campo, depois um reserva", fg=DIM, bg=BG,
-                 font=(F, 9)).pack(anchor="w")
+        tk.Label(rf, text="arraste do campo", fg=DIM, bg=BG, font=(F, 9)).pack(anchor="w")
         self.lb_bench = tk.Listbox(rf, bg=PANEL, fg=TXT, font=("Menlo", 12), relief="flat",
                                    selectbackground=GREEN_D, activestyle="none",
                                    highlightthickness=1, highlightbackground=LINE)
         self.lb_bench.pack(fill="both", expand=True, pady=4)
-        self.lb_bench.bind("<Double-1>", lambda e: self._bench_into_pitch())
 
         actions = tk.Frame(self.panel, bg=BG)
         actions.pack(fill="x", padx=24, pady=(0, 14))
-        self._btn(actions, "↧ Colocar reserva no titular selecionado", self._bench_into_pitch,
-                  bg=PANEL2, fg=TXT).pack(side="left")
         self._btn(actions, "💾 Salvar escalação", self._save_lineup).pack(side="right")
         self._refresh_pitch()
 
-    # rows do campo: GK embaixo, depois DF, MF, FW (ataque em cima)
-    def _xi_by_row(self):
-        rows = {"GK": [], "DF": [], "MF": [], "FW": []}
-        for pid in self._xi_ids:
-            p = self._by_id.get(pid)
-            if p:
-                rows.setdefault(p["pos"], rows["MF"]).append(p)
-        return rows
-
     def _refresh_pitch(self):
-        for w in self.pitch.winfo_children():
-            w.destroy()
-        rows = self._xi_by_row()
-        order = [("FW", rows["FW"]), ("MF", rows["MF"]), ("DF", rows["DF"]), ("GK", rows["GK"])]
-        for _, players in order:
-            line = tk.Frame(self.pitch, bg="#2f7d3a")
-            line.pack(expand=True, fill="x", pady=6)
-            inner = tk.Frame(line, bg="#2f7d3a")
-            inner.pack(anchor="center")
-            for p in players:
-                self._pitch_token(inner, p)
-        # reservas
+        """Redraw Canvas pitch with drag-drop player tokens."""
+        self.pitch_canvas.delete("all")
+        w, h = self.pitch_canvas.winfo_width() or 800, self.pitch_canvas.winfo_height() or 600
+
+        # Grid positions: 4-3-3 layout (11 slots)
+        # Top row: FW (2) | Middle: MF (3) | Bottom: DF (4) + GK (1) + SUB (1)
+        slot_size = 80
+        slot_spacing = 20
+        self._slot_rects = {}  # canvas_id -> (pid, pos_x, pos_y)
+        self._token_ids = {}   # pid -> canvas_id
+
+        # FW row (top, 2 players)
+        fw_players = [p for p in [self._by_id.get(pid) for pid in self._xi_ids] if p and p["pos"] == "FW"]
+        for i, p in enumerate(fw_players[:2]):
+            x = w // 2 - 90 + i * 160
+            y = 60
+            self._draw_token(x, y, p, slot_size)
+
+        # MF row (middle, 3 players)
+        mf_players = [p for p in [self._by_id.get(pid) for pid in self._xi_ids] if p and p["pos"] == "MF"]
+        for i, p in enumerate(mf_players[:3]):
+            x = w // 2 - 160 + i * 150
+            y = 220
+            self._draw_token(x, y, p, slot_size)
+
+        # DF row (lower, 4 players)
+        df_players = [p for p in [self._by_id.get(pid) for pid in self._xi_ids] if p and p["pos"] == "DF"]
+        for i, p in enumerate(df_players[:4]):
+            x = w // 2 - 240 + i * 160
+            y = 380
+            self._draw_token(x, y, p, slot_size)
+
+        # GK + SUB (bottom)
+        gk_players = [p for p in [self._by_id.get(pid) for pid in self._xi_ids] if p and p["pos"] == "GK"]
+        if gk_players:
+            self._draw_token(w // 2 - 100, h - 90, gk_players[0], slot_size)
+
+        # Bench
         self.lb_bench.delete(0, "end")
         self._bench_order = [pid for pid in self._by_id if pid not in self._xi_ids]
         self._bench_order.sort(key=lambda i: ("GK DF MF FW".index(self._by_id[i]["pos"])
@@ -1228,48 +1250,79 @@ class App(tk.Tk):
         for pid in self._bench_order:
             p = self._by_id[pid]
             self.lb_bench.insert("end", f"{p['role']:<3} {p['name'][:18]:<18} {p['ovr']}")
+
         avg = round(sum(self._by_id[i]["ovr"] for i in self._xi_ids) / 11, 1) if len(self._xi_ids) == 11 else 0
-        self.lbl_avg.config(text=f"Média do XI: {avg}")
+        self.lbl_avg.config(text=f"Média: {avg}")
 
-    def _pitch_token(self, parent, p):
-        # Cartão claro sobre o gramado escuro — alto contraste, lê de longe
-        # (era verde-escuro sobre verde-escuro, quase ilegível). Selecionado
-        # vira dourado, igual ao destaque já usado no resto da GUI.
-        selected = p["id"] == self._sel_id
-        bg = GOLD if selected else PANEL
-        fg = TXT
-        last = p["name"].split()[-1][:11]
-        fit = p.get("fitness", 100)
+    def _draw_token(self, x, y, player, size):
+        """Draw draggable player token on canvas."""
+        if not player:
+            return
+        last = player["name"].split()[-1][:8]
+        fit = player.get("fitness", 100)
         dot = "🟢" if fit >= 75 else ("🟡" if fit >= 50 else "🔴")
-        b = tk.Button(parent, text=f"{last}\n{p['role']} · {p['ovr']}  {dot}{fit}%",
-                      command=lambda i=p["id"]: self._select_slot(i),
-                      bg=bg, fg=fg, font=(F, 10, "bold"), relief="flat", bd=0,
-                      width=12, height=2, cursor="hand2",
-                      activebackground=GOLD, activeforeground=TXT,
-                      highlightthickness=2, highlightbackground="#173a1d")
-        b.pack(side="left", padx=6)
+        text = f"{last}\n{player['ovr']}\n{dot}"
 
-    def _select_slot(self, pid):
-        self._sel_id = None if self._sel_id == pid else pid
-        self._refresh_pitch()
+        # Token appearance
+        cid = self.pitch_canvas.create_rectangle(
+            x - size // 2, y - size // 2,
+            x + size // 2, y + size // 2,
+            fill=PANEL, outline=GOLD, width=2
+        )
+        tid = self.pitch_canvas.create_text(
+            x, y, text=text, font=(F, 9, "bold"), fill=TXT
+        )
 
-    def _bench_into_pitch(self):
-        if self._sel_id is None:
-            messagebox.showinfo("Escalar", "Clique primeiro num titular no campo (fica dourado).")
+        self._token_ids[player["id"]] = cid
+        self.pitch_canvas.tag_bind(cid, "<Button-1>", lambda e: self._on_pitch_press(e, player["id"], x, y))
+
+    def _on_pitch_press(self, event, pid=None, orig_x=None, orig_y=None):
+        """Start dragging a player token."""
+        if pid is None:
+            # Find clicked token
+            items = self.pitch_canvas.find_overlapping(
+                event.x - 10, event.y - 10, event.x + 10, event.y + 10
+            )
+            for item in items:
+                tags = self.pitch_canvas.gettags(item)
+                if "player_token" in tags:
+                    # Find player by canvas item
+                    for p_id, c_id in self._token_ids.items():
+                        if c_id == item:
+                            pid = p_id
+                            break
+        if pid:
+            self._drag_from = pid
+            self._drag_offset = (event.x, event.y)
+            if pid in self._token_ids:
+                self.pitch_canvas.tag_raise(self._token_ids[pid])
+
+    def _on_pitch_drag(self, event):
+        """Drag player token around canvas."""
+        if self._drag_from and self._drag_from in self._token_ids:
+            cid = self._token_ids[self._drag_from]
+            dx = event.x - self._drag_offset[0]
+            dy = event.y - self._drag_offset[1]
+            self.pitch_canvas.move(cid, dx, dy)
+            self._drag_offset = (event.x, event.y)
+
+    def _on_pitch_release(self, event):
+        """Drop player token — validate position compatibility."""
+        if not self._drag_from:
             return
-        bs = self.lb_bench.curselection()
-        if not bs:
-            messagebox.showinfo("Escalar", "Selecione um reserva na lista à direita.")
-            return
-        in_id = self._bench_order[bs[0]]
-        self._xi_ids = [in_id if i == self._sel_id else i for i in self._xi_ids]
-        self._sel_id = None
+
+        # Check if dropped on bench area (right side)
+        if event.x > self.pitch_canvas.winfo_width() - 270:
+            # Remove from XI
+            if self._drag_from in self._xi_ids:
+                self._xi_ids.remove(self._drag_from)
+
+        self._drag_from = None
         self._refresh_pitch()
 
     def _change_formation(self):
         f = self.cb_form.get()
         self._xi_ids = with_conn(lambda c: G.auto_lineup_ids(c, f))
-        self._sel_id = None
         self._refresh_pitch()
 
     def _save_lineup(self):
