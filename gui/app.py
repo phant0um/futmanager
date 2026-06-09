@@ -1202,7 +1202,15 @@ class App(tk.Tk):
         actions = tk.Frame(self.panel, bg=BG)
         actions.pack(fill="x", padx=24, pady=(0, 14))
         self._btn(actions, "💾 Salvar escalação", self._save_lineup).pack(side="right")
-        self._refresh_pitch()
+        # Canvas não tem dimensão real ainda (winfo_width retorna 1, não 0).
+        # Aguarda o evento Configure (primeiro resize = canvas pronto) pra desenhar.
+        self.pitch_canvas.bind("<Configure>", self._on_canvas_configure)
+
+    def _on_canvas_configure(self, event=None):
+        """Chamado quando canvas é redimensionado (inclui a primeira renderização).
+        Guarda contra resize durante drag — evita inconsistência de estado."""
+        if not getattr(self, "_drag_from", None):
+            self._refresh_pitch()
 
     def _refresh_pitch(self):
         """Redraw Canvas pitch with drag-drop player tokens."""
@@ -1293,7 +1301,14 @@ class App(tk.Tk):
             return
         dragged = self._by_id.get(dragged_pid)
 
-        if event.x > self.pitch_canvas.winfo_width() - 270:
+        # Detecta drop sobre a listbox de reservas usando coordenadas de tela.
+        # event.x/y são relativos ao canvas — a listbox é widget separado fora dele.
+        lbx = self.lb_bench.winfo_rootx()
+        lby = self.lb_bench.winfo_rooty()
+        lbw = self.lb_bench.winfo_width()
+        lbh = self.lb_bench.winfo_height()
+        on_bench = (lbx <= event.x_root <= lbx + lbw and lby <= event.y_root <= lby + lbh)
+        if on_bench:
             bs = self.lb_bench.curselection()
             if not bs:
                 messagebox.showinfo("Substituir", "Selecione um reserva na lista antes de arrastar.")
