@@ -300,7 +300,8 @@ def update_market_values(conn):
         pot_f = 1 + max(0, pot - ovr) * 0.04
         value = int(base * age_f * pot_f)
         # Cláusula ≈ valor × 1.5-2.5 (craques têm cláusula mais alta)
-        clause_mult = 1.5 + (ovr / 100) * 1.0 + random.uniform(-0.2, 0.3)
+        rng = random.Random(pid)
+        clause_mult = 1.5 + (ovr / 100) * 1.0 + rng.uniform(-0.2, 0.3)
         clause = int(value * clause_mult)
         conn.execute("UPDATE players SET value=?, release_clause=? WHERE id=?",
                      (value, clause, pid))
