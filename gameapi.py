@@ -1085,19 +1085,21 @@ def api_stadium(c):
     car = get_active_career(c)
     if not car:
         return {"ok": False}
-    club = c.execute("SELECT name, prestige, capacity, ticket_price FROM clubs WHERE id=?",
+    club = c.execute("SELECT name, prestige, capacity, ticket_price, fan_mood FROM clubs WHERE id=?",
                      (car["manager_club_id"],)).fetchone()
     last = c.execute("SELECT manager_pos FROM season_history WHERE career_id=? ORDER BY season_year DESC LIMIT 1",
                      (car["id"],)).fetchone()
     pos = last["manager_pos"] if last and last["manager_pos"] else 10
     n = 20
+    fan_mood = club["fan_mood"] if club["fan_mood"] is not None else 50
     base = base_ticket_price(club["prestige"])
     price = club["ticket_price"] or base
-    fill = attendance_fill(club["prestige"], pos, n, price)
-    rev = stadium_revenue(club["capacity"], club["prestige"], pos, n, price)
+    fill = attendance_fill(club["prestige"], pos, n, price, fan_mood)
+    rev = stadium_revenue(club["capacity"], club["prestige"], pos, n, price, fan_mood)
     tl = car["training_level"] or 2
     return {"ok": True, "capacity": club["capacity"] or 0, "base": base, "price": price,
             "fill": round(fill * 100), "public": int((club["capacity"] or 0) * fill),
+            "fan_mood": fan_mood,
             "revenue": rev, "revenue_fmt": fmt_money(rev),
             "training": tl, "training_cost": tl * 13_750_000,  # €2.5M × 5.5
             "training_cost_fmt": fmt_money(tl * 13_750_000),  # €2.5M × 5.5

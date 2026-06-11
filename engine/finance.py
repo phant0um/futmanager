@@ -41,10 +41,12 @@ def base_ticket_price(prestige: int) -> int:
 
 
 def attendance_fill(prestige: int, league_pos: int, n_clubs: int,
-                    ticket_price: int) -> float:
+                    ticket_price: int, fan_mood: int = 50) -> float:
     """
-    Ocupação do estádio (0-1) = base por campanha × curva de demanda do preço.
-    Preço acima da referência reduz público; abaixo aumenta (até lotar).
+    Ocupação do estádio (0-1) = base por campanha × curva de demanda do preço
+    × humor da torcida. Preço acima da referência reduz público; abaixo
+    aumenta (até lotar). Humor baixo (torcida insatisfeita) reduz público
+    mesmo com campanha boa — e pode cair de uma temporada pra outra.
     """
     pos_factor = (n_clubs - league_pos + 1) / n_clubs
     perf_fill = 0.55 + 0.40 * pos_factor          # campanha define base
@@ -52,29 +54,49 @@ def attendance_fill(prestige: int, league_pos: int, n_clubs: int,
     ratio = ticket_price / max(base, 1)
     # Elasticidade: +100% no preço → −60% na demanda; −50% → +30%
     demand_mult = max(0.20, min(1.30, 1 - 0.6 * (ratio - 1)))
-    return max(0.10, min(1.0, perf_fill * demand_mult))
+    # Humor 0-100 → fator 0.7-1.3 (50 = neutro)
+    mood_mult = 0.7 + (fan_mood / 100) * 0.6
+    return max(0.10, min(1.0, perf_fill * demand_mult * mood_mult))
 
 
 def stadium_revenue(capacity: int, prestige: int, league_pos: int, n_clubs: int,
-                    ticket_price: int | None = None) -> int:
-    """Bilheteria = capacidade × ocupação(preço,campanha) × preço × jogos casa."""
+                    ticket_price: int | None = None, fan_mood: int = 50) -> int:
+    """Bilheteria = capacidade × ocupação(preço,campanha,humor) × preço × jogos casa."""
     capacity = capacity or 25_000
     if ticket_price is None:
         ticket_price = base_ticket_price(prestige)
-    fill = attendance_fill(prestige, league_pos, n_clubs, ticket_price)
+    fill = attendance_fill(prestige, league_pos, n_clubs, ticket_price, fan_mood)
     return int(capacity * fill * ticket_price * HOME_GAMES)
 
 
 def season_income(prestige: int, league_pos: int, n_clubs: int, won_title: bool,
-                  capacity: int = 25_000, ticket_price: int | None = None) -> dict:
+                  capacity: int = 25_000, ticket_price: int | None = None,
+                  fan_mood: int = 50) -> dict:
     """Receita: patrocínio/TV + bilheteria + premiação + bônus título."""
     sponsor = int((prestige / 100) ** 2 * SPONSOR_BASE)
-    gate = stadium_revenue(capacity, prestige, league_pos, n_clubs, ticket_price)
+    gate = stadium_revenue(capacity, prestige, league_pos, n_clubs, ticket_price, fan_mood)
     pos_factor = (n_clubs - league_pos + 1) / n_clubs
     prize = int(pos_factor * PRIZE_POOL)
     title = TITLE_BONUS if won_title else 0
     return {"sponsor": sponsor, "gate": gate, "prize": prize, "title": title,
             "total": sponsor + gate + prize + title}
+
+
+def update_fan_mood(old_mood: int, expected_pos: int, league_pos: int,
+                    won_title: bool) -> int:
+    """
+    Ajusta humor da torcida (0-100) conforme resultado x expectativa
+    (Hattrick: torcida espera de acordo com a força/prestígio do time).
+    Posição melhor que esperado → humor sobe; pior → cai. Regride um
+    pouco em direção a 50 a cada temporada (sem efeitos, mood normaliza).
+    """
+    diff = expected_pos - league_pos  # positivo = superou expectativa
+    delta = diff * 3
+    if won_title:
+        delta += 10
+    new_mood = old_mood + delta
+    new_mood += (50 - new_mood) * 0.1  # regressão leve à média
+    return max(5, min(100, round(new_mood)))
 
 
 def roll_red_cards(conn, club_id: int, seed: int | None = None):
@@ -137,14 +159,15 @@ def apply_season_finances(conn, career, league_pos: int, n_clubs: int,
     """
     Aplica receita − folha ao caixa. Retorna relatório financeiro.
     """
-    club = conn.execute("SELECT prestige, capacity, ticket_price FROM clubs WHERE id=?",
+    club = conn.execute("SELECT prestige, capacity, ticket_price, fan_mood, league_id FROM clubs WHERE id=?",
                         (career["manager_club_id"],)).fetchone()
     prestige = club[0] if club else 60
     capacity = club[1] if club else 25_000
     ticket_price = club[2] if club and club[2] else base_ticket_price(prestige)
+    fan_mood = club[3] if club and club[3] is not None else 50
 
     cid = career["manager_club_id"]
-    income = season_income(prestige, league_pos, n_clubs, won_title, capacity, ticket_price)
+    income = season_income(prestige, league_pos, n_clubs, won_title, capacity, ticket_price, fan_mood)
     wages = wage_bill(conn, cid)
     fines, offenders = red_card_fines(conn, cid)
     loan_fees = loan_fees_expense(conn, cid)
@@ -156,6 +179,13 @@ def apply_season_finances(conn, career, league_pos: int, n_clubs: int,
     conn.execute("UPDATE career SET money=? WHERE id=?", (new_money, career["id"]))
     # Zera expulsões da temporada (multa já aplicada)
     conn.execute("UPDATE players SET red_cards=0 WHERE club_id=?", (cid,))
+
+    # Humor da torcida: sobe se superou expectativa (posição esperada por
+    # prestígio na liga), cai se decepcionou — bilheteria pode cair também.
+    from engine.coach import _prestige_rank
+    expected_pos = _prestige_rank(conn, cid, club[4]) if club and club[4] else league_pos
+    new_mood = update_fan_mood(fan_mood, expected_pos, league_pos, won_title)
+    conn.execute("UPDATE clubs SET fan_mood=? WHERE id=?", (new_mood, cid))
     conn.commit()
 
     return {

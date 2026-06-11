@@ -57,6 +57,7 @@ def migrate(conn: sqlite3.Connection, current_year: int = 2026):
     # Estádio
     _add_col(conn, "clubs", "capacity", "INTEGER")      # capacidade do estádio
     _add_col(conn, "clubs", "ticket_price", "INTEGER")  # preço atual do ingresso (€)
+    _add_col(conn, "clubs", "fan_mood", "INTEGER DEFAULT 50")  # humor da torcida (0-100), afeta bilheteria
     # Estado (para estaduais brasileiros)
     _add_col(conn, "clubs", "state", "TEXT")            # SP, RJ, MG, RS...
     # Treino: foco de desenvolvimento do elenco

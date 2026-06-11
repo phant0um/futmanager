@@ -1252,7 +1252,6 @@ class App(tk.Tk):
 
     def _refresh_pitch(self):
         """Redraw Canvas pitch with drag-drop player tokens."""
-        from engine.lineup import FORMATIONS
         self.pitch_canvas.delete("all")
         w, h = self.pitch_canvas.winfo_width() or 800, self.pitch_canvas.winfo_height() or 600
         self._draw_pitch_markings(w, h)
@@ -1261,13 +1260,11 @@ class App(tk.Tk):
         self._slots = []       # [{"pid","x","y","pos"}] — slot occupied by each starter
         self._token_ids = {}   # pid -> canvas tag (rect+text grouped under same tag)
 
-        df_n, mf_n, fw_n = FORMATIONS.get(self._lineup["formation"], FORMATIONS["4-3-3"])
-        counts = {"FW": fw_n, "MF": mf_n, "DF": df_n, "GK": 1}
         ys = {"FW": h * 0.16, "MF": h * 0.42, "DF": h * 0.68, "GK": h - 70}
 
         for pos_label in ("FW", "MF", "DF", "GK"):
             players = [p for p in (self._by_id.get(pid) for pid in self._xi_ids)
-                       if p and p["pos"] == pos_label][:counts[pos_label]]
+                       if p and p["pos"] == pos_label]
             xs = self._row_x(len(players), w)
             for p, x in zip(players, xs):
                 cp = self._custom_pos.get(p["id"])
@@ -1745,7 +1742,10 @@ class App(tk.Tk):
         box = tk.Frame(self.panel, bg=PANEL, padx=22, pady=18, highlightbackground=LINE, highlightthickness=1)
         box.pack(fill="x", padx=24)
 
-        tk.Label(box, text=f"🏟  Capacidade: {d['capacity']:,} lugares   ·   ingresso de referência €{d['base']}",
+        mood = d.get("fan_mood", 50)
+        mood_lbl = "🟢 ótimo" if mood >= 70 else ("🟡 normal" if mood >= 40 else "🔴 ruim")
+        tk.Label(box, text=f"🏟  Capacidade: {d['capacity']:,} lugares   ·   ingresso de referência R${d['base']}"
+                            f"   ·   humor da torcida: {mood_lbl} ({mood})",
                  fg=TXT, bg=PANEL, font=(F, 13)).pack(anchor="w", pady=(0, 10))
 
         row1 = tk.Frame(box, bg=PANEL)
@@ -1797,12 +1797,13 @@ class App(tk.Tk):
         # projeção rápida reusando engine (prestige da posição média 10/20)
         st = self.state_cache
         prest = st["club"]["prestige"]
-        fill = attendance_fill(prest, 10, 20, price)
-        rev = stadium_revenue(d["capacity"], prest, 10, 20, price)
+        mood = d.get("fan_mood", 50)
+        fill = attendance_fill(prest, 10, 20, price, mood)
+        rev = stadium_revenue(d["capacity"], prest, 10, 20, price, mood)
         public = int(d["capacity"] * fill)
         self.lbl_proj.config(text=(
             f"Projeção: ocupação {fill*100:.0f}%  ({public:,}/jogo)  ·  bilheteria {G.fmt_money(rev)}/ano\n"
-            f"Custo do CT nível {ct}: {G.fmt_money(ct*2_500_000)}/ano"))
+            f"Custo do CT nível {ct}: {G.fmt_money(ct*13_750_000)}/ano"))
 
     def _save_stadium(self):
         lbl_to_key = {v: k for k, v in self._focus_lbl.items()}
