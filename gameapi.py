@@ -1109,7 +1109,7 @@ def save_stadium(c, price, training, focus=None):
     car = get_active_career(c)
     if not car:
         return {"ok": False}
-    price = max(5, min(300, int(price)))
+    price = max(28, min(1650, int(price)))  # R$5-300 × 5.5 (escala BRL do TICKET_BASE)
     training = max(1, min(5, int(training)))
     c.execute("UPDATE clubs SET ticket_price=? WHERE id=?", (price, car["manager_club_id"]))
     if focus:

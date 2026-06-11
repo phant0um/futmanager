@@ -1750,8 +1750,8 @@ class App(tk.Tk):
 
         row1 = tk.Frame(box, bg=PANEL)
         row1.pack(fill="x", pady=4)
-        tk.Label(row1, text="Preço do ingresso (€):", fg=DIM, bg=PANEL, font=(F, 12), width=22, anchor="w").pack(side="left")
-        self.sc_price = tk.Scale(row1, from_=5, to=300, orient="horizontal", bg=PANEL, fg=TXT,
+        tk.Label(row1, text="Preço do ingresso (R$):", fg=DIM, bg=PANEL, font=(F, 12), width=22, anchor="w").pack(side="left")
+        self.sc_price = tk.Scale(row1, from_=28, to=1650, orient="horizontal", bg=PANEL, fg=TXT,
                                  troughcolor=PANEL2, highlightthickness=0, length=320,
                                  command=lambda v: self._proj_update())
         self.sc_price.set(d["price"])
