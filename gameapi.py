@@ -6,6 +6,7 @@ Reusada por: gui/app.py (Tkinter) e web/server.py (HTTP shim).
 from __future__ import annotations
 import sqlite3
 import hashlib
+import json
 import sys
 from pathlib import Path
 
@@ -1049,18 +1050,21 @@ def api_lineup(c):
     xi_out = [pj(p, True) for p in xi]
     bench = [pj(p, False) for p in squad if p.id not in xi_ids]
     avg = round(sum(p.overall for p in xi) / 11, 1) if len(xi) == 11 else 0
+    positions = json.loads(car["lineup_positions"] or "{}")
     return {"ok": True, "formation": formation, "formations": list(FORMATIONS.keys()),
             "style": car["tactic_style"] or "equilibrado",
-            "xi": xi_out, "bench": bench, "avg": avg, "valid": ok, "msg": msg}
+            "xi": xi_out, "bench": bench, "avg": avg, "valid": ok, "msg": msg,
+            "positions": positions}
 
 
-def save_lineup(c, formation, style, xi_ids):
+def save_lineup(c, formation, style, xi_ids, positions=None):
     car = get_active_career(c)
     if not car:
         return {"ok": False}
     ids = ",".join(str(i) for i in xi_ids)
-    c.execute("UPDATE career SET formation=?, tactic_style=?, lineup=? WHERE id=?",
-              (formation, style, ids, car["id"]))
+    pos_json = json.dumps(positions or {})
+    c.execute("UPDATE career SET formation=?, tactic_style=?, lineup=?, lineup_positions=? WHERE id=?",
+              (formation, style, ids, pos_json, car["id"]))
     c.commit()
     return {"ok": True}
 
@@ -1095,7 +1099,7 @@ def api_stadium(c):
     return {"ok": True, "capacity": club["capacity"] or 0, "base": base, "price": price,
             "fill": round(fill * 100), "public": int((club["capacity"] or 0) * fill),
             "revenue": rev, "revenue_fmt": fmt_money(rev),
-            "training": tl, "training_cost": tl * 2_500_000,
+            "training": tl, "training_cost": tl * 13_750_000,  # €2.5M × 5.5
             "training_cost_fmt": fmt_money(tl * 13_750_000),  # €2.5M × 5.5
             "training_focus": car["training_focus"] or "geral",
             "training_focuses": ["geral", "fisico", "tecnico", "finalizacao"]}
@@ -1185,7 +1189,7 @@ def api_market(c, position=None, max_price=None, min_ovr=0, max_ovr=99,
         # SELECTs extras por render). Calcula direto a partir da própria linha.
         mult = resistance_mult(r["seller_prestige"], buyer_prestige, r["overall"], r["transfer_listed"])
         asking = int(buy_price(r["value"], r["id"], car["id"], car["season_year"]) * mult)
-        clause = int((r["release_clause"] or int((r["value"] or 1_000_000) * 2.2)) * mult)
+        clause = int((r["release_clause"] or int((r["value"] or 5_500_000) * 2.2)) * mult)
         flags = []
         if r["transfer_listed"]: flags.append("V")   # à venda
         if r["loan_listed"]: flags.append("E")       # empréstimo

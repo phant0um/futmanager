@@ -691,6 +691,25 @@ class App(tk.Tk):
         msgs = data["messages"]
         title = "Inbox" + (f" — {data['unread']} não lidas" if data["unread"] else "")
         self._panel_title(title)
+
+        offers = with_conn(G.api_incoming_offers)
+        if offers:
+            box = tk.Frame(self.panel, bg=PANEL)
+            box.pack(fill="x", padx=24, pady=(0, 12))
+            tk.Label(box, text="📨 Propostas recebidas", fg=GOLD, bg=PANEL,
+                     font=(F, 12, "bold")).pack(anchor="w", padx=12, pady=(8, 4))
+            for o in offers:
+                row = tk.Frame(box, bg=PANEL)
+                row.pack(fill="x", padx=12, pady=4)
+                tk.Label(row, text=f"{o['club_name']} oferece {o['amount_fmt']} por "
+                                   f"{o['player_name']} (OVR {o['overall']})",
+                         fg=TXT, bg=PANEL, font=(F, 11)).pack(side="left")
+                self._btn(row, "Recusar", lambda o=o: self._respond_offer(o, False),
+                          bg=BG2, fg=TXT).pack(side="right", padx=(6, 0))
+                self._btn(row, "Aceitar", lambda o=o: self._respond_offer(o, True),
+                          bg=GREEN).pack(side="right")
+            tk.Frame(box, bg=PANEL, height=8).pack()
+
         if not msgs:
             tk.Label(self.panel, text="Nada por aqui ainda — avisos do conselho, relatórios "
                                        "de olheiro e resumos de temporada aparecem aqui.",
@@ -725,23 +744,6 @@ class App(tk.Tk):
     # ─── ELENCO ──────────────────────────────────────────────────────────────
     def _panel_elenco(self):
         self._panel_title("Elenco")
-        offers = with_conn(G.api_incoming_offers)
-        if offers:
-            box = tk.Frame(self.panel, bg=PANEL)
-            box.pack(fill="x", padx=24, pady=(0, 12))
-            tk.Label(box, text="📨 Propostas recebidas", fg=GOLD, bg=PANEL,
-                     font=(F, 12, "bold")).pack(anchor="w", padx=12, pady=(8, 4))
-            for o in offers:
-                row = tk.Frame(box, bg=PANEL)
-                row.pack(fill="x", padx=12, pady=4)
-                tk.Label(row, text=f"{o['club_name']} oferece {o['amount_fmt']} por "
-                                   f"{o['player_name']} (OVR {o['overall']})",
-                         fg=TXT, bg=PANEL, font=(F, 11)).pack(side="left")
-                self._btn(row, "Recusar", lambda o=o: self._respond_offer(o, False),
-                          bg=BG2, fg=TXT).pack(side="right", padx=(6, 0))
-                self._btn(row, "Aceitar", lambda o=o: self._respond_offer(o, True),
-                          bg=GREEN).pack(side="right")
-            tk.Frame(box, bg=PANEL, height=8).pack()
         squad = with_conn(G.api_squad)
         cols = ("pos", "name", "age", "ovr", "pot", "fit", "form", "value", "wage", "contract")
         tv = self._table(cols, ("POS", "Jogador", "Idade", "OVR", "POT", "Condição", "Forma",
@@ -1171,8 +1173,12 @@ class App(tk.Tk):
         self.lbl_avg.pack(side="right")
 
         self._by_id = {p["id"]: p for p in data["xi"] + data["bench"]}
+        self._custom_pos = {int(k): tuple(v) for k, v in data.get("positions", {}).items()}
         self._drag_from = None  # player being dragged
         self._drag_offset = (0, 0)
+        self._press_xy = (0, 0)
+        self._selected_starter_pid = None
+        self._selected_bench_pid = None
 
         body = tk.Frame(self.panel, bg=BG)
         body.pack(fill="both", expand=True, padx=24, pady=10)
@@ -1192,16 +1198,19 @@ class App(tk.Tk):
         rf.pack(side="left", fill="both")
         rf.pack_propagate(False)
         tk.Label(rf, text="RESERVAS", fg=DIM, bg=BG, font=(F, 11, "bold")).pack(anchor="w")
-        tk.Label(rf, text="selecione reserva, arraste titular p/ aqui = troca", fg=DIM, bg=BG,
-                 font=(F, 9), wraplength=240, justify="left").pack(anchor="w")
+        tk.Label(rf, text="clique num titular no campo + numa reserva aqui, "
+                          "depois 🔁 Trocar. Arraste no campo = reposicionar.",
+                 fg=DIM, bg=BG, font=(F, 9), wraplength=240, justify="left").pack(anchor="w")
         self.lb_bench = tk.Listbox(rf, bg=PANEL, fg=TXT, font=("Menlo", 12), relief="flat",
                                    selectbackground=GREEN_D, activestyle="none",
                                    highlightthickness=1, highlightbackground=LINE)
         self.lb_bench.pack(fill="both", expand=True, pady=4)
+        self.lb_bench.bind("<<ListboxSelect>>", self._on_bench_select)
 
         actions = tk.Frame(self.panel, bg=BG)
         actions.pack(fill="x", padx=24, pady=(0, 14))
         self._btn(actions, "💾 Salvar escalação", self._save_lineup).pack(side="right")
+        self._btn(actions, "🔁 Trocar", self._swap_selected, bg=BG2, fg=TXT).pack(side="right", padx=(0, 8))
         # Canvas não tem dimensão real ainda (winfo_width retorna 1, não 0).
         # Aguarda o evento Configure (primeiro resize = canvas pronto) pra desenhar.
         self.pitch_canvas.bind("<Configure>", self._on_canvas_configure)
@@ -1212,30 +1221,58 @@ class App(tk.Tk):
         if not getattr(self, "_drag_from", None):
             self._refresh_pitch()
 
+    def _row_x(self, n, w, margin=80):
+        """Posições X igualmente espaçadas pra n jogadores numa linha."""
+        if n <= 0:
+            return []
+        if n == 1:
+            return [w / 2]
+        span = max(w - 2 * margin, 1)
+        step = span / (n - 1)
+        return [margin + i * step for i in range(n)]
+
+    def _draw_pitch_markings(self, w, h):
+        """Linhas do campo: bordas, linha do meio, círculo central, áreas."""
+        c = self.pitch_canvas
+        L = "#dfe9df"
+        c.create_rectangle(4, 4, w - 4, h - 4, outline=L, width=2)
+        c.create_line(4, h / 2, w - 4, h / 2, fill=L, width=2)
+        r = min(w, h) * 0.12
+        c.create_oval(w / 2 - r, h / 2 - r, w / 2 + r, h / 2 + r, outline=L, width=2)
+        c.create_oval(w / 2 - 3, h / 2 - 3, w / 2 + 3, h / 2 + 3, fill=L, outline=L)
+        pb_w, pb_h = min(w * 0.55, 280), 100
+        gb_w, gb_h = min(w * 0.26, 140), 40
+        for top in (True, False):
+            py0 = 4 if top else h - 4 - pb_h
+            py1 = 4 + pb_h if top else h - 4
+            c.create_rectangle(w / 2 - pb_w / 2, py0, w / 2 + pb_w / 2, py1, outline=L, width=2)
+            gy0 = 4 if top else h - 4 - gb_h
+            gy1 = 4 + gb_h if top else h - 4
+            c.create_rectangle(w / 2 - gb_w / 2, gy0, w / 2 + gb_w / 2, gy1, outline=L, width=2)
+
     def _refresh_pitch(self):
         """Redraw Canvas pitch with drag-drop player tokens."""
+        from engine.lineup import FORMATIONS
         self.pitch_canvas.delete("all")
         w, h = self.pitch_canvas.winfo_width() or 800, self.pitch_canvas.winfo_height() or 600
+        self._draw_pitch_markings(w, h)
 
-        # Grid positions: 4-3-3 layout (11 slots)
-        # Top row: FW (2) | Middle: MF (3) | Bottom: DF (4) + GK (1)
         slot_size = 80
         self._slots = []       # [{"pid","x","y","pos"}] — slot occupied by each starter
         self._token_ids = {}   # pid -> canvas tag (rect+text grouped under same tag)
 
-        rows = [
-            ("FW", [p for p in [self._by_id.get(pid) for pid in self._xi_ids] if p and p["pos"] == "FW"][:2],
-             w // 2 - 90, 60, 160),
-            ("MF", [p for p in [self._by_id.get(pid) for pid in self._xi_ids] if p and p["pos"] == "MF"][:3],
-             w // 2 - 160, 220, 150),
-            ("DF", [p for p in [self._by_id.get(pid) for pid in self._xi_ids] if p and p["pos"] == "DF"][:4],
-             w // 2 - 240, 380, 160),
-            ("GK", [p for p in [self._by_id.get(pid) for pid in self._xi_ids] if p and p["pos"] == "GK"][:1],
-             w // 2 - 40, h - 90, 0),
-        ]
-        for pos_label, players, x0, y, dx in rows:
-            for i, p in enumerate(players):
-                self._draw_token(x0 + i * dx, y, p, slot_size, pos_label)
+        df_n, mf_n, fw_n = FORMATIONS.get(self._lineup["formation"], FORMATIONS["4-3-3"])
+        counts = {"FW": fw_n, "MF": mf_n, "DF": df_n, "GK": 1}
+        ys = {"FW": h * 0.16, "MF": h * 0.42, "DF": h * 0.68, "GK": h - 70}
+
+        for pos_label in ("FW", "MF", "DF", "GK"):
+            players = [p for p in (self._by_id.get(pid) for pid in self._xi_ids)
+                       if p and p["pos"] == pos_label][:counts[pos_label]]
+            xs = self._row_x(len(players), w)
+            for p, x in zip(players, xs):
+                cp = self._custom_pos.get(p["id"])
+                px, py = (cp[0] * w, cp[1] * h) if cp else (x, ys[pos_label])
+                self._draw_token(px, py, p, slot_size, pos_label)
 
         # Bench
         self.lb_bench.delete(0, "end")
@@ -1261,9 +1298,11 @@ class App(tk.Tk):
         dot = "🟢" if fit >= 75 else ("🟡" if fit >= 50 else "🔴")
         text = f"{last}\n{player['ovr']}\n{dot}"
 
+        selected = pid == self._selected_starter_pid
         self.pitch_canvas.create_rectangle(
             x - size // 2, y - size // 2, x + size // 2, y + size // 2,
-            fill=PANEL, outline=GOLD, width=2, tags=(tag, "token")
+            fill=PANEL, outline=(RED if selected else GOLD), width=3 if selected else 2,
+            tags=(tag, "token")
         )
         self.pitch_canvas.create_text(
             x, y, text=text, font=(F, 9, "bold"), fill=TXT, tags=(tag, "token")
@@ -1279,6 +1318,7 @@ class App(tk.Tk):
             return
         self._drag_from = pid
         self._drag_offset = (event.x, event.y)
+        self._press_xy = (event.x, event.y)
         self.pitch_canvas.tag_raise(self._token_ids[pid])
 
     def _on_pitch_drag(self, event):
@@ -1292,54 +1332,51 @@ class App(tk.Tk):
         self._drag_offset = (event.x, event.y)
 
     def _on_pitch_release(self, event):
-        """Drop token: bench-zone = substitui (precisa reserva selecionada de
-        mesma posição); pitch = troca com titular do slot mais próximo (mesma
-        posição). Drop inválido sempre volta pro grid via _refresh_pitch."""
+        """Solta token: clique simples (sem arrastar) seleciona o titular
+        pra troca via botão; arrastar reposiciona livremente no campo."""
         dragged_pid = self._drag_from
         self._drag_from = None
         if not dragged_pid:
             return
-        dragged = self._by_id.get(dragged_pid)
 
-        # Detecta drop sobre a listbox de reservas usando coordenadas de tela.
-        # event.x/y são relativos ao canvas — a listbox é widget separado fora dele.
-        lbx = self.lb_bench.winfo_rootx()
-        lby = self.lb_bench.winfo_rooty()
-        lbw = self.lb_bench.winfo_width()
-        lbh = self.lb_bench.winfo_height()
-        on_bench = (lbx <= event.x_root <= lbx + lbw and lby <= event.y_root <= lby + lbh)
-        if on_bench:
-            bs = self.lb_bench.curselection()
-            if not bs:
-                messagebox.showinfo("Substituir", "Selecione um reserva na lista antes de arrastar.")
-            else:
-                in_id = self._bench_order[bs[0]]
-                incoming = self._by_id[in_id]
-                if incoming["pos"] != dragged["pos"]:
-                    messagebox.showwarning("Posição incompatível",
-                        f"{incoming['name']} ({incoming['pos']}) não pode substituir "
-                        f"{dragged['name']} ({dragged['pos']}).")
-                else:
-                    self._xi_ids = [in_id if i == dragged_pid else i for i in self._xi_ids]
+        moved = abs(event.x - self._press_xy[0]) + abs(event.y - self._press_xy[1])
+        if moved < 6:
+            self._selected_starter_pid = (
+                None if self._selected_starter_pid == dragged_pid else dragged_pid)
             self._refresh_pitch()
             return
 
-        target = min(self._slots, key=lambda s: (s["x"] - event.x) ** 2 + (s["y"] - event.y) ** 2,
-                     default=None)
-        if target and target["pid"] != dragged_pid:
-            tgt_player = self._by_id.get(target["pid"])
-            if tgt_player["pos"] != dragged["pos"]:
-                messagebox.showwarning("Posição incompatível",
-                    f"{dragged['name']} ({dragged['pos']}) não pode trocar com "
-                    f"{tgt_player['name']} ({tgt_player['pos']}).")
-            else:
-                i1, i2 = self._xi_ids.index(dragged_pid), self._xi_ids.index(target["pid"])
-                self._xi_ids[i1], self._xi_ids[i2] = self._xi_ids[i2], self._xi_ids[i1]
+        # Campo: posição livre — escala como jogador onde quiser.
+        w = self.pitch_canvas.winfo_width() or 800
+        h = self.pitch_canvas.winfo_height() or 600
+        x = min(max(event.x, 0), w)
+        y = min(max(event.y, 0), h)
+        self._custom_pos[dragged_pid] = (x / w, y / h)
+        self._refresh_pitch()
+
+    def _on_bench_select(self, event=None):
+        bs = self.lb_bench.curselection()
+        self._selected_bench_pid = self._bench_order[bs[0]] if bs else None
+
+    def _swap_selected(self):
+        """Troca titular selecionado no campo pelo reserva selecionado na
+        lista — sem checagem de posição (escala em qualquer posição)."""
+        out_pid, in_id = self._selected_starter_pid, self._selected_bench_pid
+        if not out_pid or not in_id:
+            messagebox.showinfo("Trocar", "Selecione um titular no campo e um reserva na lista.")
+            return
+        self._xi_ids = [in_id if i == out_pid else i for i in self._xi_ids]
+        self._custom_pos.pop(out_pid, None)
+        self._selected_starter_pid = None
+        self._selected_bench_pid = None
+        self.lb_bench.selection_clear(0, "end")
         self._refresh_pitch()
 
     def _change_formation(self):
         f = self.cb_form.get()
+        self._lineup["formation"] = f
         self._xi_ids = with_conn(lambda c: G.auto_lineup_ids(c, f))
+        self._custom_pos = {}
         self._refresh_pitch()
 
     def _save_lineup(self):
@@ -1347,7 +1384,8 @@ class App(tk.Tk):
             messagebox.showwarning("XI inválido", "Precisa de exatamente 11 titulares.")
             return
         f, style, ids = self.cb_form.get(), self.cb_style.get(), self._xi_ids
-        with_conn(lambda c: G.save_lineup(c, f, style, ids))
+        positions = {str(pid): list(pos) for pid, pos in self._custom_pos.items() if pid in ids}
+        with_conn(lambda c: G.save_lineup(c, f, style, ids, positions))
         messagebox.showinfo("Salvo", "Escalação salva.")
 
     # ─── MERCADO ─────────────────────────────────────────────────────────────

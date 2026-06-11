@@ -106,6 +106,7 @@ def migrate(conn: sqlite3.Connection, current_year: int = 2026):
     # Escalação
     _add_col(conn, "career", "formation", "TEXT")   # ex: "4-3-3"
     _add_col(conn, "career", "lineup",    "TEXT")   # CSV de player_id (11 titulares)
+    _add_col(conn, "career", "lineup_positions", "TEXT")  # JSON {player_id: [x_frac, y_frac]} posições livres no campo
     # Tática + treino
     _add_col(conn, "career", "tactic_style",   "TEXT DEFAULT 'equilibrado'")  # ofensivo|equilibrado|defensivo
     _add_col(conn, "career", "training_level", "INTEGER DEFAULT 2")            # 1-5: intensidade do CT
@@ -327,7 +328,7 @@ def assign_release_clauses(conn: sqlite3.Connection):
         "SELECT id, value, overall FROM players WHERE release_clause IS NULL AND retired=0"
     ).fetchall()
     for pid, value, ovr in rows:
-        value = value or 1_000_000
+        value = value or 5_500_000  # Base value in BRL (€1M × 5.5)
         ovr = ovr or 60
         # Craques têm cláusula mais alta (mais difícil tirar)
         mult = 1.5 + (ovr / 100) * 1.0  # ovr 60→2.1, 90→2.4

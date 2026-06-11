@@ -148,8 +148,8 @@ def apply_season_finances(conn, career, league_pos: int, n_clubs: int,
     wages = wage_bill(conn, cid)
     fines, offenders = red_card_fines(conn, cid)
     loan_fees = loan_fees_expense(conn, cid)
-    # Custo do CT: nível × €2.5M/temporada (nível 2 = baseline)
-    training_cost = (career["training_level"] or 2) * 2_500_000
+    # Custo do CT: nível × R$13.75M/temporada (€2.5M × 5.5, nível 2 = baseline)
+    training_cost = (career["training_level"] or 2) * 13_750_000
     net = income["total"] - wages - fines - loan_fees - training_cost
 
     new_money = career["money"] + net

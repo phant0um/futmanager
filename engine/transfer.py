@@ -24,12 +24,12 @@ def _seed_for(player_id: int, career_id: int, season: int) -> int:
 def buy_price(value: int, player_id: int, career_id: int, season: int) -> int:
     """Preço determinístico de compra (mesmo jogador, mesmo preço na janela)."""
     rng = random.Random(_seed_for(player_id, career_id, season))
-    return int((value or 1_000_000) * rng.uniform(*BUY_PREMIUM))
+    return int((value or 5_500_000) * rng.uniform(*BUY_PREMIUM))
 
 
 def sell_price(value: int, player_id: int, career_id: int, season: int) -> int:
     rng = random.Random(_seed_for(player_id, career_id, season) + 7)
-    return int((value or 500_000) * rng.uniform(*SELL_DISCOUNT))
+    return int((value or 2_750_000) * rng.uniform(*SELL_DISCOUNT))
 
 
 def squad_size(conn, club_id: int) -> int:
@@ -85,7 +85,7 @@ def asking_and_clause(conn, player_id: int, career) -> tuple[int, int]:
         (player_id,)
     ).fetchone()
     asking = buy_price(p["value"], player_id, career["id"], career["season_year"])
-    clause = p["release_clause"] or int((p["value"] or 1_000_000) * 2.2)
+    clause = p["release_clause"] or int((p["value"] or 5_500_000) * 2.2)
     seller = conn.execute("SELECT prestige FROM clubs WHERE id=?", (p["club_id"],)).fetchone()
     buyer = conn.execute("SELECT prestige FROM clubs WHERE id=?", (career["manager_club_id"],)).fetchone()
     mult = resistance_mult(seller[0] if seller else None, buyer[0] if buyer else None,
@@ -197,7 +197,7 @@ def incoming_offers(conn, career) -> list[dict]:
     import json
     club_id = career["manager_club_id"]
     rng = random.Random(hashlib.md5(
-        f"offers:{career['id']}:{career['season_year']}:{career['current_round']}".encode()
+        f"offers:{career['id']}:{club_id}:{career['season_year']}:{career['current_round']}".encode()
     ).digest())
     declined = {(pid, cid) for pid, cid, yr in json.loads(career["declined_offers"] or "[]")
                 if yr == career["season_year"]}
@@ -221,7 +221,7 @@ def incoming_offers(conn, career) -> list[dict]:
         if (p["id"], buyer["id"]) in declined:
             continue
         mult = rng.uniform(0.85, 1.05) if listed else rng.uniform(1.05, 1.45)
-        amount = max(100_000, int((p["value"] or 1_000_000) * mult))
+        amount = max(550_000, int((p["value"] or 5_500_000) * mult))
         offers.append({"player_id": p["id"], "player_name": p["name"], "overall": p["overall"],
                        "club_id": buyer["id"], "club_name": buyer["name"], "amount": amount})
         if len(offers) >= 3:

@@ -276,7 +276,11 @@ def _newgen_attributes(pos: str, overall: int, rng: random.Random) -> dict:
 # ─── Valor de mercado ────────────────────────────────────────────────────────
 
 def update_market_values(conn):
-    """Calcula valor de mercado (€) baseado em overall, idade, potencial."""
+    """Calcula valor de mercado (R$) baseado em overall, idade, potencial.
+    Recalcula também a cláusula de rescisão (proporcional ao novo valor) —
+    senão fica presa na escala antiga (assign_release_clauses só roda 1x,
+    em cima do value pré-conversão BRL)."""
+    import random
     players = conn.execute(
         "SELECT id, overall, age, potential FROM players WHERE retired=0"
     ).fetchall()
@@ -284,8 +288,8 @@ def update_market_values(conn):
         ovr = ovr or 60
         age = age or 25
         pot = pot or ovr
-        # Base exponencial no overall
-        base = (ovr / 100) ** 4 * 80_000_000
+        # Base exponencial no overall (€80M × 5.5 = R$440M)
+        base = (ovr / 100) ** 4 * 440_000_000
         # Fator idade (jovens valem mais)
         if age <= 21:   age_f = 1.4
         elif age <= 25: age_f = 1.2
@@ -295,7 +299,11 @@ def update_market_values(conn):
         # Bônus potencial
         pot_f = 1 + max(0, pot - ovr) * 0.04
         value = int(base * age_f * pot_f)
-        conn.execute("UPDATE players SET value=? WHERE id=?", (value, pid))
+        # Cláusula ≈ valor × 1.5-2.5 (craques têm cláusula mais alta)
+        clause_mult = 1.5 + (ovr / 100) * 1.0 + random.uniform(-0.2, 0.3)
+        clause = int(value * clause_mult)
+        conn.execute("UPDATE players SET value=?, release_clause=? WHERE id=?",
+                     (value, clause, pid))
     conn.commit()
 
 
