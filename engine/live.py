@@ -28,8 +28,11 @@ class LiveResult:
     away_goals: int
     home_scorers: list = field(default_factory=list)
     away_scorers: list = field(default_factory=list)
-    reds: dict = field(default_factory=dict)   # {player_name: club_id}
-    injuries: list = field(default_factory=list)  # [{player_id, name, club_id}] — quem saiu contundido
+    home_scorer_ids: list = field(default_factory=list)
+    away_scorer_ids: list = field(default_factory=list)
+    yellows: dict = field(default_factory=dict)   # {player_id: club_id}
+    reds: dict = field(default_factory=dict)        # {player_name: club_id} -> manter compat
+    injuries: list = field(default_factory=list)    # [{player_id, name, club_id}]
     events: list = field(default_factory=list)
 
     @property
@@ -37,6 +40,14 @@ class LiveResult:
         if self.home_goals > self.away_goals: return self.home_id
         if self.away_goals > self.home_goals: return self.away_id
         return None
+
+    def player_goals(self, player_id: int) -> int:
+        return self.home_scorer_ids.count(player_id) + self.away_scorer_ids.count(player_id)
+
+    def player_cards(self, player_id: int, color: str) -> int:
+        if color == "yellow":
+            return 1 if player_id in self.yellows else 0
+        return 1 if player_id in self.reds else 0
 
 
 _PREFIXES = {"cr","se","fc","ec","sc","ac","ca","rb","afc","ss","as","sl",
@@ -129,29 +140,39 @@ def build_timeline(home, away) -> LiveResult:
 
     for _ in range(gh):
         s = goal_scorer(h_start)
-        nm = s.name if s else "?"
-        res.home_scorers.append(nm)
-        evs.append(LiveEvent(random.randint(1, 90), "goal", "H", f"⚽ GOL do {abbr(home.name)}! {nm}"))
+        if s:
+            res.home_scorers.append(s.name)
+            res.home_scorer_ids.append(s.id)
+            evs.append(LiveEvent(random.randint(1, 90), "goal", "H", f"⚽ GOL do {abbr(home.name)}! {s.name}"))
+        else:
+            res.home_scorers.append("?")
+            res.home_scorer_ids.append(None)
     for _ in range(ga):
         s = goal_scorer(a_start)
-        nm = s.name if s else "?"
-        res.away_scorers.append(nm)
-        evs.append(LiveEvent(random.randint(1, 90), "goal", "A", f"⚽ GOL do {abbr(away.name)}! {nm}"))
+        if s:
+            res.away_scorers.append(s.name)
+            res.away_scorer_ids.append(s.id)
+            evs.append(LiveEvent(random.randint(1, 90), "goal", "A", f"⚽ GOL do {abbr(away.name)}! {s.name}"))
+        else:
+            res.away_scorers.append("?")
+            res.away_scorer_ids.append(None)
 
     # ── Cartões amarelos (~1.8/time) ──
-    for team, starters, short in (("H", h_start, abbr(home.name)), ("A", a_start, abbr(away.name))):
+    for team, starters, short, club_id in (("H", h_start, abbr(home.name), home.id), ("A", a_start, abbr(away.name), away.id)):
         n = _poisson(1.8)
         for _ in range(min(n, 5)):
             p = _weighted_player([x for x in starters if x.position in ("DF", "MF")] or starters, "strength")
             if p:
+                res.yellows[p.id] = club_id
                 evs.append(LiveEvent(random.randint(1, 90), "yellow", team,
                                      f"🟨 Amarelo p/ {p.name} ({short})"))
 
     # ── Cartões vermelhos (~7%/time) ──
-    for team, starters, short in (("H", h_start, abbr(home.name)), ("A", a_start, abbr(away.name))):
+    for team, starters, short, club_id in (("H", h_start, abbr(home.name), home.id), ("A", a_start, abbr(away.name), away.id)):
         if random.random() < 0.07:
             p = random.choice([x for x in starters if x.position in ("DF", "MF")] or starters)
-            res.reds[p.name] = home.id if team == "H" else away.id
+            res.reds[p.name] = club_id
+            res.reds[p.id] = club_id  # também por id para stats
             evs.append(LiveEvent(random.randint(20, 90), "red", team,
                                  f"🟥 VERMELHO! {p.name} ({short}) expulso"))
 

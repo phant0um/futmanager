@@ -110,10 +110,20 @@ def play_stage(conn, career, comp, stage_idx, by_id, on_match=None):
     """, (career["id"], career["season_year"], comp, stage_idx)).fetchall()
     cid = career["manager_club_id"]
     lines, winners = [], []
+    from engine.stats import record_player_match
     for t in ties:
         h, a = by_id[t["home_id"]], by_id[t["away_id"]]
         is_player = cid in (h.id, a.id)
         r = on_match(h, a) if (is_player and on_match) else simulate_match(h, a)
+        # cartões fictícios p/ jogadores de IA (só registramos gols de forma simples)
+        for club, starters, sc_ids in (
+            (h, getattr(h, "lineup", h.players[:11]), r.home_scorer_ids),
+            (a, getattr(a, "lineup", a.players[:11]), r.away_scorer_ids),
+        ):
+            for p in starters:
+                goals = sc_ids.count(p.id)
+                record_player_match(conn, career["id"], career["season_year"], f"copa_{comp}",
+                                    club.id, p.id, goals=goals)
         if r.home_goals == r.away_goals:
             hp, ap = simulate_penalties(h, a)
             w = h if hp >= ap else a

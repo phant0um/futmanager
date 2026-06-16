@@ -52,8 +52,9 @@ def attendance_fill(prestige: int, league_pos: int, n_clubs: int,
     perf_fill = 0.55 + 0.40 * pos_factor          # campanha define base
     base = base_ticket_price(prestige)
     ratio = ticket_price / max(base, 1)
-    # Elasticidade: +100% no preço → −60% na demanda; −50% → +30%
-    demand_mult = max(0.20, min(1.30, 1 - 0.6 * (ratio - 1)))
+    # Elasticidade de preço realista: demanda cai mais rápido que o preço sobe.
+    # +100% no preço (ratio=2) → ~38% da demanda; +300% (ratio=4) → ~14%.
+    demand_mult = max(0.03, min(1.30, ratio ** -1.4))
     # Humor 0-100 → fator 0.7-1.3 (50 = neutro)
     mood_mult = 0.7 + (fan_mood / 100) * 0.6
     return max(0.10, min(1.0, perf_fill * demand_mult * mood_mult))

@@ -174,6 +174,7 @@ def play_stage(conn, career, stage_idx: int):
         WHERE career_id=? AND season_year=? AND comp='cl' AND stage_idx=? AND played=0
     """, (career["id"], career["season_year"], stage_idx)).fetchall()
 
+    from engine.stats import record_player_match
     for match_row in rows:
         mid, h_id, a_id = match_row["id"], match_row["home_id"], match_row["away_id"]
         h_obj = _club_obj(conn, h_id)
@@ -184,6 +185,16 @@ def play_stage(conn, career, stage_idx: int):
 
         res = simulate_match(h_obj, a_obj)
         hg, ag = res.home_goals, res.away_goals
+
+        # estatísticas dos jogadores
+        for club, starters, sc_ids in (
+            (h_obj, getattr(h_obj, "lineup", h_obj.players[:11]), res.home_scorer_ids),
+            (a_obj, getattr(a_obj, "lineup", a_obj.players[:11]), res.away_scorer_ids),
+        ):
+            for p in starters:
+                goals = sc_ids.count(p.id)
+                record_player_match(conn, career["id"], career["season_year"], "champions",
+                                    club.id, p.id, goals=goals)
 
         # On draws in KO stages, penalties
         if stage_idx > 0 and hg == ag:

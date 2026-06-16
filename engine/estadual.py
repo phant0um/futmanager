@@ -101,6 +101,7 @@ def run_estadual_live(state: str, clubs: list, watch_club_id=None):
     """
     from engine.live import build_timeline, abbr, stadium_name
     from engine.simulation import simulate_penalties
+    from engine.stats import record_player_match
 
     res = EstadualResult(state=state)
     if len(clubs) < 8:
@@ -123,6 +124,7 @@ def run_estadual_live(state: str, clubs: list, watch_club_id=None):
         return d
 
     matchdays = []
+    career = None  # deve ser passado por argumento se quisermos persistir stats
 
     # ── Fase de grupos (cada clube enfrenta os 12 de outros grupos), rodada a rodada
     pairs = [(in_play[i], in_play[j])

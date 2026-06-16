@@ -404,32 +404,34 @@ def api_competitions(c):
     return out
 
 
-def api_estadual_table(c):
-    """Classificação dos grupos do estadual jogado nesta temporada (persistido
-    em career.estadual_data — antes só existia na tela de resumo do momento)."""
+def api_estadual_table(conn):
+    """Classificação dos grupos do estadual jogado nesta temporada."""
     import json
-    car = get_active_career(c)
-    if not car or (car["estadual_year"] or 0) != car["season_year"] or not car["estadual_data"]:
-        return {"ok": False}
-    return {"ok": True, **json.loads(car["estadual_data"])}
-
-
-def api_copa_bracket(c, comp):
-    """Chaveamento (mata-mata) da copa — reconstruído da tabela `copa`,
-    que já guarda stage/match/placar/vencedor de cada confronto da temporada."""
-    car = get_active_career(c)
+    car = get_active_career(conn)
     if not car:
-        return {"ok": False}
+        return {"rows": [], "groups": {}, "comp": "estadual", "season": 0, "name": "Estadual"}
+    if (car["estadual_year"] or 0) == car["season_year"] and car["estadual_data"]:
+        d = json.loads(car["estadual_data"])
+        return {"groups": d.get("groups", {}), "champion": d.get("champion"),
+                "comp": "estadual", "season": car["season_year"], "name": d.get("name", "Estadual")}
+    return {"rows": [], "groups": {}, "comp": "estadual", "season": car["season_year"], "name": "Estadual"}
+
+
+def api_copa_bracket(conn, comp):
+    """Chaveamento (mata-mata) da copa — compatível com api_table_by_comp."""
+    car = get_active_career(conn)
+    if not car:
+        return {"rows": [], "comp": f"copa_{comp}", "season": 0, "name": "Copa"}
     from engine.copa import COMPS, STAGES, ensure_comp
-    ensure_comp(c, car, comp)
-    rows = c.execute("""
+    ensure_comp(conn, car, comp)
+    cid = car["manager_club_id"]
+    rows = conn.execute("""
         SELECT cp.stage_idx, cp.match_idx, cp.home_id, cp.away_id, cp.played,
                cp.home_goals, cp.away_goals, cp.winner_id, h.name home_name, a.name away_name
         FROM copa cp JOIN clubs h ON h.id=cp.home_id JOIN clubs a ON a.id=cp.away_id
         WHERE cp.career_id=? AND cp.season_year=? AND cp.comp=?
         ORDER BY cp.stage_idx, cp.match_idx
     """, (car["id"], car["season_year"], comp)).fetchall()
-    cid = car["manager_club_id"]
     stages = []
     for si, (stage_name, _) in enumerate(STAGES):
         matches = [r for r in rows if r["stage_idx"] == si]
@@ -439,18 +441,23 @@ def api_copa_bracket(c, comp):
         for r in matches:
             out.append({
                 "home": r["home_name"], "away": r["away_name"],
+                "home_id": r["home_id"], "away_id": r["away_id"],
                 "played": bool(r["played"]),
+                "hg": r["home_goals"], "ag": r["away_goals"],
                 "score": f"{r['home_goals']}-{r['away_goals']}" if r["played"] else "—",
                 "winner": (r["home_name"] if r["winner_id"] == r["home_id"] else r["away_name"]) if r["played"] else None,
                 "is_player": cid in (r["home_id"], r["away_id"]),
+                "stage_name": stage_name,
             })
         stages.append({"name": stage_name, "matches": out})
-    return {"ok": True, "name": COMPS[comp]["name"], "stages": stages}
+    return {"rows": [m for s in stages for m in s["matches"]], "stages": stages,
+            "comp": f"copa_{comp}", "season": car["season_year"], "name": COMPS[comp]["name"]}
 
 
 def create_career(club_id, coach_name):
     from ui.career import _money_for_prestige, get_active_career as _gac
     from engine.manager import create_player_coach, set_expectation
+    from engine.lineup import MAX_SQUAD_SIZE
     import saves as SV
     coach_name = coach_name or "Técnico"
 
@@ -472,12 +479,39 @@ def create_career(club_id, coach_name):
     c.execute("INSERT INTO career(manager_club_id, season_year, money, reputation) VALUES (?,?,?,?)",
               (club_id, year, money, club["prestige"]))
     c.commit()
+
+    # Ajusta elenco inicial ao limite de 30 (remove os piores excedentes, protege goleiros)
+    _trim_squad_to_limit(c, club_id, MAX_SQUAD_SIZE)
+
     career = _gac(c)
     create_player_coach(c, career, coach_name)
     set_expectation(c, career)
     _assign_stars_on_new_career(c, career)
     c.close()
     return {"ok": True}
+
+
+def _trim_squad_to_limit(c, club_id, limit):
+    total = c.execute("SELECT COUNT(*) FROM players WHERE club_id=? AND retired=0", (club_id,)).fetchone()[0]
+    if total <= limit:
+        return
+    # protege goleiros: mantém os 2 melhores
+    keep_gk = {r["id"] for r in c.execute(
+        "SELECT id FROM players WHERE club_id=? AND retired=0 AND position='GK' ORDER BY overall DESC LIMIT 2",
+        (club_id,)).fetchall()}
+    n_remove = total - limit
+    # remove os piores excedentes, começando pelos mais velhos de menor overall, nunca goleiros protegidos
+    rows = c.execute("""
+        SELECT id, position, overall FROM players
+        WHERE club_id=? AND retired=0 AND id NOT IN ({}) AND position<>'GK'
+        ORDER BY overall ASC, age DESC
+        LIMIT ?
+    """.format(",".join(str(i) for i in keep_gk) if keep_gk else "0"),
+        (club_id, n_remove)).fetchall()
+    ids = [r["id"] for r in rows]
+    if ids:
+        c.execute("DELETE FROM players WHERE id IN ({})".format(",".join("?"*len(ids))), ids)
+        c.commit()
 
 
 # ─── JOGAR (motor sem I/O) ────────────────────────────────────────────────────
@@ -534,8 +568,6 @@ def api_next(conn):
         return {"kind": "none"}
     cid = car["manager_club_id"]
     country, state = _player_country_state(conn, cid)
-    if state and (car["estadual_year"] or 0) != car["season_year"]:
-        return {"kind": "estadual", "label": "Estadual (início da temporada)"}
     CAL.ensure_fixtures(conn, car)
     cr = car["current_round"] or 0
     nr = CAL.num_rounds(conn, car)
@@ -562,27 +594,54 @@ def api_next(conn):
     nm = CAL.next_match(conn, car)
     if nm:
         return {"kind": "league", "round": cr, "n": nr,
-                "label": f"Rodada {cr+1}/{nr} · vs {nm['opp_name']} ({nm['loc']})"}
+                "label": f"Brasileirão Série A — Rodada {cr+1}/{nr} · vs {nm['opp_name']} ({nm['loc']})"}
     return {"kind": "season_end", "label": "Fim de temporada — processar entressafra"}
 
 
-def api_play(conn):
+def api_advance(conn):
+    """Botão JOGAR: avança a semana, processando Brasileirão e eventuais copas/champions pendentes."""
     car = get_active_career(conn)
     if not car:
         return {"ok": False}
+    out = {"ok": True, "kind": "advance", "results": []}
+
+    # 1) rodada do Brasileirão
     ev = api_next(conn)
-    k = ev["kind"]
-    if k == "estadual":
-        return _web_estadual(conn, car)
-    if k == "copa":
-        return _web_copa(conn, car, ev["comp"], ev["stage"])
-    if k == "champions":
-        return _web_champions(conn, car, ev["stage"])
-    if k == "league":
-        return _web_league_round(conn, car)
-    if k == "season_end":
+    if ev["kind"] == "league":
+        out["results"].append(_web_league_round(conn, car))
+        car = get_active_career(conn)
+    elif ev["kind"] == "season_end":
         return _web_finish_season(conn, car)
-    return {"ok": False, "kind": k}
+
+    cr = (car["current_round"] or 0)
+    country, state = _player_country_state(conn, car["manager_club_id"])
+
+    # 2) copas mata-mata intercaladas
+    from engine import copa as COPA
+    for comp in COPA.ALL_COMPS:
+        COPA.ensure_comp(conn, car, comp)
+        if not COPA.player_in_comp(conn, car, comp):
+            continue
+        st = COPA.pending_stage(conn, car, comp)
+        if st is not None and cr - 1 >= COPA.COMPS[comp]["triggers"][st]:
+            out["results"].append(_web_copa(conn, car, comp, st))
+
+    # 3) Champions League (fase de grupos / mata-mata)
+    from engine import champions_league as CL
+    if CL.is_participant(conn, car):
+        CL.ensure_group_stage(conn, car)
+        due = CL.due_stage(conn, car, cr - 1)
+        if due:
+            st_idx, _ = due
+            out["results"].append(_web_champions(conn, car, st_idx))
+
+    conn.commit()
+    return out
+
+
+def api_play(conn):
+    """Alias legado para manter compatibilidade com endpoints antigos."""
+    return api_advance(conn)
 
 
 def _apply_player_tactics(conn, career, club):
@@ -687,6 +746,7 @@ def play_round_live(conn):
         (career["id"], career["season_year"], cr)).fetchall()
     from engine import injury as INJ
     matches = []
+    from engine.stats import record_player_match
     for f in fxs:
         h, a = by_id[f["home_id"]], by_id[f["away_id"]]
         res = build_timeline(h, a)
@@ -695,6 +755,17 @@ def play_round_live(conn):
             home_yellows=?, home_reds=?, away_yellows=?, away_reds=? WHERE id=?""",
             (res.home_goals, res.away_goals, hy, hr, ay, ar, f["id"]))
         _update_morale(h, a, res.home_goals, res.away_goals)
+        # estatísticas dos jogadores (todos os titulares + gols/cartões)
+        for club, starters, opp_starters, sc_ids in (
+            (h, getattr(h, "lineup", h.players[:11]), a.players, res.home_scorer_ids),
+            (a, getattr(a, "lineup", a.players[:11]), h.players, res.away_scorer_ids),
+        ):
+            for p in starters:
+                goals = sc_ids.count(p.id)
+                yellows = 1 if p.id in res.yellows else 0
+                reds = 1 if p.id in res.reds else 0
+                record_player_match(conn, career["id"], career["season_year"], "league",
+                                    club.id, p.id, goals=goals, yellows=yellows, reds=reds)
         if cid in (h.id, a.id):
             CAL._update_player_condition(conn, by_id[cid])
             # Lesão real só pro elenco do técnico humano (custo/balanço de
@@ -920,6 +991,25 @@ def _web_estadual(conn, career):
             "player_stage": res.player_stage, "prize": prize}
 
 
+def api_table_by_comp(conn, comp="league"):
+    car = get_active_career(conn)
+    cid = car["manager_club_id"] if car else 0
+    if comp == "league":
+        return {"rows": _full_table(conn, car, cid), "comp": comp,
+                "season": car["season_year"] if car else 0,
+                "name": "Brasileirão Série A"}
+    if comp == "estadual":
+        return api_estadual_table(conn)
+    if comp.startswith("copa_"):
+        return api_copa_bracket(conn, comp.split("_", 1)[1])
+    if comp == "champions":
+        return api_champions_table(conn)
+    return {"rows": [], "comp": comp, "season": car["season_year"] if car else 0, "name": comp}
+
+
+# ─── Web shim helpers ───────────────────────────────────────────────────────
+
+
 def _web_champions(conn, career, stage_idx: int):
     """Play Champions League stage (group or KO)."""
     from engine import champions_league as CL
@@ -1106,7 +1196,7 @@ def save_delete(slug):
 
 def api_lineup(c):
     from ui.career import get_saved_xi, _load_squad_players
-    from engine.lineup import FORMATIONS, validate_lineup
+    from engine.lineup import FORMATIONS, validate_lineup, validate_bench, MAX_BENCH_SIZE
     car = get_active_career(c)
     if not car:
         return {"ok": False}
@@ -1114,6 +1204,7 @@ def api_lineup(c):
     formation, xi = get_saved_xi(c, car, squad)
     xi_ids = {p.id for p in xi}
     ok, msg = validate_lineup(xi, formation)
+    bench_ok, bench_msg = validate_bench(squad, xi)
 
     from engine.knowledge import cm_role
     def pj(p, on):
@@ -1126,33 +1217,59 @@ def api_lineup(c):
                 "fitness": getattr(p, "fitness", 100), "form": round(getattr(p, "form", 1.0), 2)}
     xi_out = [pj(p, True) for p in xi]
     bench = [pj(p, False) for p in squad if p.id not in xi_ids]
+    bench = bench[:MAX_BENCH_SIZE]
     avg = round(sum(p.overall for p in xi) / 11, 1) if len(xi) == 11 else 0
     positions = json.loads(car["lineup_positions"] or "{}")
     return {"ok": True, "formation": formation, "formations": list(FORMATIONS.keys()),
             "style": car["tactic_style"] or "equilibrado",
             "xi": xi_out, "bench": bench, "avg": avg, "valid": ok, "msg": msg,
+            "squad_size": len(squad), "max_squad": 30, "max_bench": MAX_BENCH_SIZE,
+            "bench_valid": bench_ok, "bench_msg": bench_msg,
             "positions": positions}
 
 
 def save_lineup(c, formation, style, xi_ids, positions=None):
+    from engine.lineup import FORMATIONS, validate_bench, MAX_SQUAD_SIZE, MAX_BENCH_SIZE
     car = get_active_career(c)
     if not car:
-        return {"ok": False}
-    ids = ",".join(str(i) for i in xi_ids)
+        return {"ok": False, "msg": "Sem carreira ativa."}
+    # Normaliza para 11 ids únicos
+    ids = [int(i) for i in xi_ids if i is not None][:11]
+    ids = list(dict.fromkeys(ids))
+    if len(ids) != 11:
+        return {"ok": False, "msg": f"Escalação precisa de 11 titulares (enviados {len(ids)})."}
+
+    # Verifica se todos os ids pertencem ao elenco do técnico
+    cid = car["manager_club_id"]
+    rows = c.execute("SELECT id FROM players WHERE club_id=? AND retired=0", (cid,)).fetchall()
+    squad_ids = {r["id"] for r in rows}
+    invalid = [i for i in ids if i not in squad_ids]
+    if invalid:
+        return {"ok": False, "msg": f"Jogador(es) {invalid} não estão no elenco."}
+
+    # Verifica limites de elenco
+    if len(squad_ids) > MAX_SQUAD_SIZE:
+        return {"ok": False, "msg": f"Elenco com {len(squad_ids)} jogadores (máx {MAX_SQUAD_SIZE})."}
+    bench_count = len(squad_ids) - len(ids)
+    if bench_count > MAX_BENCH_SIZE:
+        return {"ok": False, "msg": f"Banco teria {bench_count} reservas (máx {MAX_BENCH_SIZE}). Venda ou empreste jogadores."}
+
     pos_json = json.dumps(positions or {})
     c.execute("UPDATE career SET formation=?, tactic_style=?, lineup=?, lineup_positions=? WHERE id=?",
-              (formation, style, ids, pos_json, car["id"]))
+              (formation, style, ",".join(str(i) for i in ids), pos_json, car["id"]))
     c.commit()
-    return {"ok": True}
+    return {"ok": True, "msg": "Escalação salva."}
 
 
-def auto_lineup_ids(c, formation):
+def auto_lineup_ids(c, formation, skip_fatigue_above=None, skip_form_below=None):
     """11 ids auto pra uma formação (usado ao trocar formação na GUI)."""
     from ui.career import _load_squad_players
     from engine.lineup import auto_lineup
     car = get_active_career(c)
     squad = _load_squad_players(c, car["manager_club_id"])
-    return [p.id for p in auto_lineup(squad, formation)]
+    return [p.id for p in auto_lineup(squad, formation,
+                                      skip_fatigue_above=skip_fatigue_above,
+                                      skip_form_below=skip_form_below)]
 
 
 # ─── Estádio & CT ──────────────────────────────────────────────────────────────
@@ -1305,7 +1422,8 @@ def api_club_squad(c, club_id):
 
 # ─── Scout ─────────────────────────────────────────────────────────────────────
 
-def api_scout_players(c, min_ovr=60, limit=50):
+def api_scout_players(c, min_ovr=60, max_ovr=99, position=None, max_price=None,
+                      max_age=40, nationality=None, sort_by="pot", limit=100):
     from engine.knowledge import cm_role
     from engine.transfer import resistance_mult, buy_price
     car = get_active_career(c)
@@ -1313,18 +1431,30 @@ def api_scout_players(c, min_ovr=60, limit=50):
         return {"ok": False}
     cid = car["manager_club_id"]
     prestige = c.execute("SELECT prestige FROM clubs WHERE id=?", (cid,)).fetchone()["prestige"]
-    rows = c.execute("""SELECT p.id, p.name, p.position, p.age, p.overall, p.potential,
+    params = [cid, min_ovr, max_ovr, max_age]
+    where = "p.retired=0 AND p.club_id<>? AND p.overall>=? AND p.overall<=? AND COALESCE(p.age,18)<=?"
+    if position:
+        where += " AND p.position=?"
+        params.append(position)
+    if nationality:
+        where += " AND p.nationality=?"
+        params.append(nationality)
+
+    order = {"ovr": "p.overall DESC", "pot": "p.potential DESC, p.overall DESC",
+             "age": "p.age ASC", "value": "p.value DESC", "asking": "p.value DESC"}.get(sort_by, "p.potential DESC, p.overall DESC")
+    rows = c.execute(f"""SELECT p.id, p.name, p.position, p.age, p.overall, p.potential,
                                p.value, p.nationality, c.name club, c.prestige seller_prestige
                         FROM players p JOIN clubs c ON c.id=p.club_id
-                        WHERE p.retired=0 AND p.club_id<>?
-                          AND p.overall>=?
-                        ORDER BY p.potential DESC, p.overall DESC
-                        LIMIT ?""", (cid, min_ovr, limit)).fetchall()
+                        WHERE {where}
+                        ORDER BY {order}
+                        LIMIT ?""", params + [limit]).fetchall()
     out = []
     for r in rows:
         role, role_label = cm_role(r["position"], dict(r))
         mult = resistance_mult(r["seller_prestige"], prestige, r["overall"], False)
         asking = int(buy_price(r["value"], r["id"], car["id"], car["season_year"]) * mult)
+        if max_price is not None and asking > max_price:
+            continue
         out.append({
             "id": r["id"], "name": r["name"], "pos": r["position"] or "?",
             "role": role, "role_label": role_label,

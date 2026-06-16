@@ -21,7 +21,7 @@ from gameapi import (conn, api_state, api_squad, api_leagues, api_clubs, api_tab
                      play_round_live, api_finance, api_stadium, save_stadium, api_market,
                      api_buy, api_player_terms, api_finalize_transfer, api_incoming_offers,
                      api_respond_offer, api_search_clubs, api_club_squad, api_scout_players,
-                     api_match_history)
+                     api_match_history, api_table_by_comp, get_active_career)
 
 STATIC = Path(__file__).parent / "static"
 PORT = 8765
@@ -72,7 +72,14 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/clubs":
                 return self._json(api_clubs(c, int(q.get("league", [0])[0])))
             if p == "/api/table":
-                return self._json(api_table(c))
+                return self._json(api_table_by_comp(c, q.get("comp", ["league"])[0]))
+            if p == "/api/player_stats":
+                from engine.stats import get_top_stats
+                car = get_active_career(c)
+                return self._json({"players": get_top_stats(c, car["season_year"], q.get("comp", ["league"])[0],
+                                                              int(q.get("limit", ["20"])[0])),
+                                   "comp": q.get("comp", ["league"])[0],
+                                   "season": car["season_year"] if car else 0})
             if p == "/api/saves":
                 return self._json(api_saves())
             if p == "/api/next":
@@ -93,7 +100,14 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/club-squad":
                 return self._json(api_club_squad(c, int(q["id"][0])))
             if p == "/api/scout":
-                return self._json(api_scout_players(c, min_ovr=int(q.get("min_ovr", [60])[0])))
+                return self._json(api_scout_players(c, min_ovr=int(q.get("min_ovr", [60])[0]),
+                                                    max_ovr=int(q.get("max_ovr", [99])[0]),
+                                                    position=q.get("position", [None])[0],
+                                                    max_price=int(q["max_price"][0]) if q.get("max_price") else None,
+                                                    max_age=int(q.get("max_age", [40])[0]),
+                                                    nationality=q.get("nationality", [None])[0],
+                                                    sort_by=q.get("sort_by", ["pot"])[0],
+                                                    limit=int(q.get("limit", [100])[0])))
             if p == "/api/history":
                 return self._json(api_match_history(c, limit=int(q.get("limit", [30])[0])))
             self.send_response(404); self.end_headers()
@@ -168,7 +182,10 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/lineup/auto":
             c = conn()
             try:
-                return self._json({"ok": True, "xi": auto_lineup_ids(c, body.get("formation"))})
+                xi = auto_lineup_ids(c, body.get("formation"),
+                                     skip_fatigue_above=body.get("skip_fatigue_above"),
+                                     skip_form_below=body.get("skip_form_below"))
+                return self._json({"ok": True, "xi": xi})
             finally:
                 c.close()
         self.send_response(404); self.end_headers()

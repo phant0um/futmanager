@@ -205,6 +205,28 @@ def migrate(conn: sqlite3.Connection, current_year: int = 2026):
         )
     """)
 
+    # Estatísticas individuais por competição
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS player_comp_stats (
+            id          INTEGER PRIMARY KEY,
+            career_id   INTEGER,
+            season_year INTEGER,
+            player_id   INTEGER,
+            club_id     INTEGER,
+            comp        TEXT,        -- 'league', 'estadual', 'copa_br', 'copa_lib', 'copa_sul', 'champions'
+            games       INTEGER DEFAULT 0,
+            goals       INTEGER DEFAULT 0,
+            assists     INTEGER DEFAULT 0,
+            yellows     INTEGER DEFAULT 0,
+            reds        INTEGER DEFAULT 0,
+            UNIQUE(career_id, season_year, player_id, comp)
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_player_comp_stats_lookup
+        ON player_comp_stats(career_id, season_year, comp)
+    """)
+
     # ── Mercado de técnicos ──────────────────────────────────────────
     conn.execute("""
         CREATE TABLE IF NOT EXISTS coaches (

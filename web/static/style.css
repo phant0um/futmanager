@@ -218,6 +218,8 @@ tr:hover td { background: var(--panel); }
 .lineup-avg b { color: var(--green); }
 .lineup-valid { color: var(--green); font-size: 12px; font-weight: 600; }
 .lineup-invalid { color: var(--red); font-size: 12px; font-weight: 600; }
+.lineup-info { color: var(--txt-dim); font-size: 12px; }
+.lineup-warn { color: var(--gold); font-size: 12px; font-weight: 600; }
 
 .pitch-wrap {
   display: flex; gap: 18px; align-items: flex-start;
@@ -341,6 +343,24 @@ tr:hover td { background: var(--panel); }
   box-shadow: 0 4px 14px var(--green-glow);
 }
 .lineup-actions .btn-save:hover { filter: brightness(1.12); border-color: rgba(255,255,255,.2); }
+
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--txt); }
+th.sortable::after { content: " ⇅"; font-size: 10px; opacity: .5; }
+
+#mk-table, #sc-table { font-size: 13px; }
+#mk-table th, #sc-table th {
+  cursor: pointer; user-select: none; background: var(--panel);
+  padding: 10px 8px; font-size: 11px; text-transform: uppercase;
+  letter-spacing: .5px; color: var(--txt-dim); border-bottom: 2px solid var(--line);
+  transition: color .1s, background .1s;
+}
+#mk-table th:hover, #sc-table th:hover { color: var(--txt); background: var(--panel2); }
+#mk-table th.center, #sc-table th.center { text-align: center; }
+#mk-table th.right, #sc-table th.right { text-align: right; }
+#mk-table td, #sc-table td { padding: 10px 8px; vertical-align: middle; }
+#mk-table tr:hover td, #sc-table tr:hover td { background: var(--panel); }
+#mk-table .tag-pos, #sc-table .tag-pos { width: 34px; padding: 3px 0; }
 
 /* View fade in */
 .panel > * { animation: fadeIn .25s ease; }

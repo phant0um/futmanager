@@ -5,7 +5,7 @@ Poisson-based probabilistic match simulator.
 from __future__ import annotations
 import math
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 from db.models import Club, Match
 
@@ -47,7 +47,9 @@ class MatchResult:
     away_goals: int
     home_scorers: list[str]
     away_scorers: list[str]
-    events: list[str]       # log textual da partida
+    events: list[str]
+    home_scorer_ids: list[int | None] = field(default_factory=list)
+    away_scorer_ids: list[int | None] = field(default_factory=list)
 
     @property
     def winner(self) -> Optional[int]:
@@ -129,6 +131,12 @@ def simulate_match(home: Club, away: Club, verbose: bool = False) -> MatchResult
     home_scorers = _pick_scorers(home, home_goals)
     away_scorers = _pick_scorers(away, away_goals)
 
+    # Mapeia nomes para ids dos marcadores
+    home_by_name = {p.name: p.id for p in home.players}
+    away_by_name = {p.name: p.id for p in away.players}
+    home_scorer_ids = [home_by_name.get(n) for n in home_scorers]
+    away_scorer_ids = [away_by_name.get(n) for n in away_scorers]
+
     # Log de eventos
     events = _generate_events(
         home.name, away.name,
@@ -143,6 +151,8 @@ def simulate_match(home: Club, away: Club, verbose: bool = False) -> MatchResult
         away_goals=away_goals,
         home_scorers=home_scorers,
         away_scorers=away_scorers,
+        home_scorer_ids=home_scorer_ids,
+        away_scorer_ids=away_scorer_ids,
         events=events,
     )
 

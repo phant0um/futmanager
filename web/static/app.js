@@ -186,6 +186,114 @@ const FORMATION_SLOTS = {
     {pos:"DF",label:"ZG",x:20,y:74}, {pos:"DF",label:"ZG",x:40,y:74}, {pos:"DF",label:"ZG",x:60,y:74}, {pos:"DF",label:"ZG",x:80,y:74},
     {pos:"MF",label:"MEI",x:15,y:52}, {pos:"MF",label:"VOL",x:32,y:52}, {pos:"MF",label:"MC",x:50,y:52}, {pos:"MF",label:"MEI",x:68,y:52}, {pos:"MF",label:"MEI",x:85,y:52},
     {pos:"FW",label:"CA",x:50,y:22}
+  ],
+  "4-1-2-1-2": [
+    {pos:"GK",label:"GOL",x:50,y:92},
+    {pos:"DF",label:"ZG",x:20,y:74}, {pos:"DF",label:"ZG",x:40,y:74}, {pos:"DF",label:"ZG",x:60,y:74}, {pos:"DF",label:"ZG",x:80,y:74},
+    {pos:"MF",label:"VOL",x:50,y:62},
+    {pos:"MF",label:"MC",x:30,y:48}, {pos:"MF",label:"MC",x:70,y:48},
+    {pos:"MF",label:"MEI",x:50,y:34},
+    {pos:"FW",label:"CA",x:35,y:22}, {pos:"FW",label:"CA",x:65,y:22}
+  ],
+  "4-3-1-2": [
+    {pos:"GK",label:"GOL",x:50,y:92},
+    {pos:"DF",label:"ZG",x:20,y:74}, {pos:"DF",label:"ZG",x:40,y:74}, {pos:"DF",label:"ZG",x:60,y:74}, {pos:"DF",label:"ZG",x:80,y:74},
+    {pos:"MF",label:"VOL",x:30,y:54}, {pos:"MF",label:"MC",x:50,y:54}, {pos:"MF",label:"MEI",x:70,y:54},
+    {pos:"MF",label:"MEI",x:50,y:38},
+    {pos:"FW",label:"CA",x:35,y:22}, {pos:"FW",label:"CA",x:65,y:22}
+  ],
+  "3-4-2-1": [
+    {pos:"GK",label:"GOL",x:50,y:92},
+    {pos:"DF",label:"ZG",x:25,y:74}, {pos:"DF",label:"ZG",x:50,y:74}, {pos:"DF",label:"ZG",x:75,y:74},
+    {pos:"MF",label:"MEI",x:20,y:52}, {pos:"MF",label:"VOL",x:40,y:52}, {pos:"MF",label:"VOL",x:60,y:52}, {pos:"MF",label:"MEI",x:80,y:52},
+    {pos:"FW",label:"PE",x:30,y:30}, {pos:"FW",label:"PD",x:70,y:30},
+    {pos:"FW",label:"CA",x:50,y:18}
+  ],
+  "3-4-1-2": [
+    {pos:"GK",label:"GOL",x:50,y:92},
+    {pos:"DF",label:"ZG",x:25,y:74}, {pos:"DF",label:"ZG",x:50,y:74}, {pos:"DF",label:"ZG",x:75,y:74},
+    {pos:"MF",label:"MEI",x:20,y:52}, {pos:"MF",label:"VOL",x:40,y:52}, {pos:"MF",label:"VOL",x:60,y:52}, {pos:"MF",label:"MEI",x:80,y:52},
+    {pos:"MF",label:"MEI",x:50,y:36},
+    {pos:"FW",label:"CA",x:35,y:22}, {pos:"FW",label:"CA",x:65,y:22}
+  ],
+  "5-4-1": [
+    {pos:"GK",label:"GOL",x:50,y:92},
+    {pos:"DF",label:"LE",x:10,y:74}, {pos:"DF",label:"ZG",x:30,y:74}, {pos:"DF",label:"ZG",x:50,y:74}, {pos:"DF",label:"ZG",x:70,y:74}, {pos:"DF",label:"LD",x:90,y:74},
+    {pos:"MF",label:"MEI",x:20,y:48}, {pos:"MF",label:"VOL",x:40,y:48}, {pos:"MF",label:"MC",x:60,y:48}, {pos:"MF",label:"MEI",x:80,y:48},
+    {pos:"FW",label:"CA",x:50,y:22}
+  ],
+  "4-1-4-1": [
+    {pos:"GK",label:"GOL",x:50,y:92},
+    {pos:"DF",label:"ZG",x:20,y:74}, {pos:"DF",label:"ZG",x:40,y:74}, {pos:"DF",label:"ZG",x:60,y:74}, {pos:"DF",label:"ZG",x:80,y:74},
+    {pos:"MF",label:"VOL",x:50,y:58},
+    {pos:"MF",label:"MEI",x:15,y:44}, {pos:"MF",label:"MC",x:38,y:44}, {pos:"MF",label:"MC",x:62,y:44}, {pos:"MF",label:"MEI",x:85,y:44},
+    {pos:"FW",label:"CA",x:50,y:22}
+  ],
+  "4-3-2-1": [
+    {pos:"GK",label:"GOL",x:50,y:92},
+    {pos:"DF",label:"ZG",x:20,y:74}, {pos:"DF",label:"ZG",x:40,y:74}, {pos:"DF",label:"ZG",x:60,y:74}, {pos:"DF",label:"ZG",x:80,y:74},
+    {pos:"MF",label:"VOL",x:30,y:54}, {pos:"MF",label:"MC",x:50,y:54}, {pos:"MF",label:"MEI",x:70,y:54},
+    {pos:"FW",label:"PE",x:30,y:34}, {pos:"FW",label:"PD",x:70,y:34},
+    {pos:"FW",label:"CA",x:50,y:18}
+  ],
+  "4-2-2-2": [
+    {pos:"GK",label:"GOL",x:50,y:92},
+    {pos:"DF",label:"ZG",x:20,y:74}, {pos:"DF",label:"ZG",x:40,y:74}, {pos:"DF",label:"ZG",x:60,y:74}, {pos:"DF",label:"ZG",x:80,y:74},
+    {pos:"MF",label:"VOL",x:35,y:58}, {pos:"MF",label:"VOL",x:65,y:58},
+    {pos:"MF",label:"MEI",x:25,y:38}, {pos:"MF",label:"MEI",x:75,y:38},
+    {pos:"FW",label:"CA",x:35,y:22}, {pos:"FW",label:"CA",x:65,y:22}
+  ],
+  "5-2-3": [
+    {pos:"GK",label:"GOL",x:50,y:92},
+    {pos:"DF",label:"LE",x:10,y:74}, {pos:"DF",label:"ZG",x:30,y:74}, {pos:"DF",label:"ZG",x:50,y:74}, {pos:"DF",label:"ZG",x:70,y:74}, {pos:"DF",label:"LD",x:90,y:74},
+    {pos:"MF",label:"VOL",x:35,y:52}, {pos:"MF",label:"MC",x:65,y:52},
+    {pos:"FW",label:"PE",x:20,y:22}, {pos:"FW",label:"CA",x:50,y:22}, {pos:"FW",label:"PD",x:80,y:22}
+  ],
+  "4-4-1-1": [
+    {pos:"GK",label:"GOL",x:50,y:92},
+    {pos:"DF",label:"ZG",x:20,y:74}, {pos:"DF",label:"ZG",x:40,y:74}, {pos:"DF",label:"ZG",x:60,y:74}, {pos:"DF",label:"ZG",x:80,y:74},
+    {pos:"MF",label:"MC",x:20,y:52}, {pos:"MF",label:"MC",x:40,y:52}, {pos:"MF",label:"MC",x:60,y:52}, {pos:"MF",label:"MC",x:80,y:52},
+    {pos:"FW",label:"SA",x:50,y:34},
+    {pos:"FW",label:"CA",x:50,y:18}
+  ],
+  "3-5-1-1": [
+    {pos:"GK",label:"GOL",x:50,y:92},
+    {pos:"DF",label:"ZG",x:25,y:74}, {pos:"DF",label:"ZG",x:50,y:74}, {pos:"DF",label:"ZG",x:75,y:74},
+    {pos:"MF",label:"MEI",x:15,y:52}, {pos:"MF",label:"VOL",x:32,y:52}, {pos:"MF",label:"MC",x:50,y:52}, {pos:"MF",label:"VOL",x:68,y:52}, {pos:"MF",label:"MEI",x:85,y:52},
+    {pos:"FW",label:"SA",x:50,y:34},
+    {pos:"FW",label:"CA",x:50,y:18}
+  ],
+  "3-3-4": [
+    {pos:"GK",label:"GOL",x:50,y:92},
+    {pos:"DF",label:"ZG",x:25,y:74}, {pos:"DF",label:"ZG",x:50,y:74}, {pos:"DF",label:"ZG",x:75,y:74},
+    {pos:"MF",label:"VOL",x:30,y:52}, {pos:"MF",label:"MC",x:50,y:52}, {pos:"MF",label:"MEI",x:70,y:52},
+    {pos:"FW",label:"PE",x:15,y:26}, {pos:"FW",label:"CA",x:38,y:22}, {pos:"FW",label:"CA",x:62,y:22}, {pos:"FW",label:"PD",x:85,y:26}
+  ],
+  "4-2-4": [
+    {pos:"GK",label:"GOL",x:50,y:92},
+    {pos:"DF",label:"ZG",x:20,y:74}, {pos:"DF",label:"ZG",x:40,y:74}, {pos:"DF",label:"ZG",x:60,y:74}, {pos:"DF",label:"ZG",x:80,y:74},
+    {pos:"MF",label:"VOL",x:35,y:52}, {pos:"MF",label:"MC",x:65,y:52},
+    {pos:"FW",label:"PE",x:15,y:22}, {pos:"FW",label:"CA",x:38,y:22}, {pos:"FW",label:"CA",x:62,y:22}, {pos:"FW",label:"PD",x:85,y:22}
+  ],
+  "5-2-1-2": [
+    {pos:"GK",label:"GOL",x:50,y:92},
+    {pos:"DF",label:"LE",x:10,y:74}, {pos:"DF",label:"ZG",x:30,y:74}, {pos:"DF",label:"ZG",x:50,y:74}, {pos:"DF",label:"ZG",x:70,y:74}, {pos:"DF",label:"LD",x:90,y:74},
+    {pos:"MF",label:"VOL",x:35,y:52}, {pos:"MF",label:"VOL",x:65,y:52},
+    {pos:"MF",label:"MEI",x:50,y:36},
+    {pos:"FW",label:"CA",x:35,y:22}, {pos:"FW",label:"CA",x:65,y:22}
+  ],
+  "4-6-0": [
+    {pos:"GK",label:"GOL",x:50,y:92},
+    {pos:"DF",label:"ZG",x:20,y:74}, {pos:"DF",label:"ZG",x:40,y:74}, {pos:"DF",label:"ZG",x:60,y:74}, {pos:"DF",label:"ZG",x:80,y:74},
+    {pos:"MF",label:"VOL",x:25,y:54}, {pos:"MF",label:"VOL",x:45,y:54}, {pos:"MF",label:"MC",x:65,y:54}, {pos:"MF",label:"MEI",x:85,y:54},
+    {pos:"MF",label:"MEI",x:30,y:30}, {pos:"MF",label:"MEI",x:70,y:30}
+  ],
+  "3-6-1": [
+    {pos:"GK",label:"GOL",x:50,y:92},
+    {pos:"DF",label:"ZG",x:25,y:74}, {pos:"DF",label:"ZG",x:50,y:74}, {pos:"DF",label:"ZG",x:75,y:74},
+    {pos:"MF",label:"MEI",x:15,y:52}, {pos:"MF",label:"VOL",x:32,y:52}, {pos:"MF",label:"MC",x:50,y:52}, {pos:"MF",label:"MC",x:68,y:52}, {pos:"MF",label:"VOL",x:85,y:52},
+    {pos:"MF",label:"MEI",x:35,y:30}, {pos:"MF",label:"MEI",x:65,y:30},
+    {pos:"FW",label:"CA",x:50,y:18}
   ]
 };
 
@@ -193,7 +301,7 @@ async function renderLineup(panel) {
   let L = await api("/api/lineup");
   if (!L.ok) { panel.innerHTML = `<div class="placeholder">Inicie uma carreira para montar a escalação.</div>`; return; }
 
-  // pool de todos os jogadores do clube
+  // pool de todos os jogadores do clube (o backend já limita a lista)
   const allPlayers = [...L.xi, ...L.bench];
   const allById = Object.fromEntries(allPlayers.map(p => [p.id, p]));
 
@@ -230,12 +338,14 @@ async function renderLineup(panel) {
     const slots = slotsFor(current.formation);
     const ids = current.xi.filter(Boolean);
     const ok = ids.length === slots.length && new Set(ids).size === ids.length;
-    return { ok, msg: ok ? "ok" : `escale ${slots.length} jogadores` };
+    return { ok, msg: ok ? "11 titulares OK" : `escale ${slots.length} titulares` };
   }
 
   function render() {
     const slots = slotsFor(current.formation);
-    const bench = benchPlayers();
+    const fullBench = benchPlayers(); // todos os não-titulares
+    const bench = fullBench.slice(0, L.max_bench || 12);
+    const extra = fullBench.length - bench.length;
     const slotHtml = slots.map((s, i) => {
       const pid = current.xi[i];
       const p = pid ? playerById(pid) : null;
@@ -247,9 +357,7 @@ async function renderLineup(panel) {
       return `<div class="slot ${cls}${sel}" style="left:${s.x}%;top:${s.y}%" data-slot="${i}">${inner}</div>`;
     }).join("");
 
-    const MAX_BENCH = 12;
-    const bench = benchPlayers().slice(0, MAX_BENCH);
-    const extra = benchPlayers().length - MAX_BENCH;
+    const squadFull = L.squad_size >= L.max_squad;
     const benchRows = bench.map(p => {
       const sel = selectedBenchId === p.id ? " selected" : "";
       const star = p.star_player ? ' <span title="⭐ Futura promessa">⭐</span>' : '';
@@ -266,10 +374,25 @@ async function renderLineup(panel) {
       ? `<span class="lineup-valid">✓ ${v.msg}</span>`
       : `<span class="lineup-invalid">⚠ ${v.msg}</span>`;
 
+    const squadWarn = squadFull
+      ? `<span class="lineup-warn">⚠ Elenco cheio (${L.squad_size}/${L.max_squad})</span>`
+      : `<span class="lineup-info">Elenco ${L.squad_size}/${L.max_squad}</span>`;
+    const benchWarn = extra > 0
+      ? `<span class="lineup-warn" title="${extra} jogadores ficam fora do banco">⚠ +${extra} excedentes</span>`
+      : '';
+
     const styleOptions = ["equilibrado","ofensivo","defensivo"].map(s =>
       `<option value="${s}" ${current.style===s?"selected":""}>${cap(s)}</option>`).join("");
     const formOptions = L.formations.map(f =>
       `<option value="${f}" ${current.formation===f?"selected":""}>${f}</option>`).join("");
+
+    const autoFilters = `
+      <label title="Não escalar titular com forma abaixo deste valor" style="font-size:12px">
+        <input id="lf-skip-form" type="checkbox" checked> Poupar forma &lt; <input id="lf-form-min" type="number" value="0.70" min="0.50" max="0.99" step="0.05" style="width:50px">
+      </label>
+      <label title="Não escalar titular com fadiga acima deste percentual" style="font-size:12px">
+        <input id="lf-skip-fatigue" type="checkbox" checked> Poupar fadiga &gt; <input id="lf-fatigue-max" type="number" value="80" min="50" max="99" style="width:45px">%
+      </label>`;
 
     panel.innerHTML = `
       <h2>📋 Escalação</h2>
@@ -277,7 +400,10 @@ async function renderLineup(panel) {
         <label>Formação <select id="lf-form">${formOptions}</select></label>
         <label>Estilo <select id="lf-style">${styleOptions}</select></label>
         <span class="lineup-avg">OVR médio: <b id="lf-avg">${avgXi()}</b></span>
-        ${validBadge}
+        ${squadWarn} ${validBadge} ${benchWarn}
+      </div>
+      <div class="lineup-bar" style="gap:18px">
+        ${autoFilters}
       </div>
       <div class="pitch-wrap">
         <div class="pitch">
@@ -287,7 +413,7 @@ async function renderLineup(panel) {
           ${slotHtml}
         </div>
         <div class="lineup-bench">
-          <h4>Reservas ${bench.length}/${MAX_BENCH}${extra > 0 ? ` <span style="color:var(--c-yellow)">(+${extra} fora do banco)</span>` : ''}</h4>
+          <h4>Reservas ${bench.length}/${L.max_bench}${extra > 0 ? ` <span style="color:var(--c-yellow)">(+${extra} fora do banco)</span>` : ''}</h4>
           ${benchRows}
         </div>
       </div>
@@ -296,7 +422,7 @@ async function renderLineup(panel) {
         <button id="lf-save" class="btn-save">💾 Salvar escalação</button>
       </div>
       <p style="margin-top:10px;color:var(--txt-dim);font-size:12px">
-        Clique no slot do campo e depois no reserva para trocar. Use Auto-escalar para preencher pela formação.
+        Elenco máx ${L.max_squad} · 11 titulares · banco máx ${L.max_bench}. Clique no slot do campo e depois no reserva para trocar.
       </p>`;
 
     // Bind formação
@@ -304,7 +430,8 @@ async function renderLineup(panel) {
       current.formation = e.target.value;
       current.selectedSlot = null;
       selectedBenchId = null;
-      const r = await api("/api/lineup/auto", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({formation: current.formation})});
+      const payload = {formation: current.formation, ...autoFiltersPayload()};
+      const r = await api("/api/lineup/auto", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload)});
       if (r.ok) {
         const slots = slotsFor(current.formation);
         current.xi = r.xi.slice(0, slots.length);
@@ -358,7 +485,7 @@ async function renderLineup(panel) {
 
     // Auto
     $("#lf-auto").onclick = async () => {
-      const r = await api("/api/lineup/auto", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({formation: current.formation})});
+      const r = await api("/api/lineup/auto", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({formation: current.formation, ...autoFiltersPayload()})});
       if (r.ok) {
         const slots = slotsFor(current.formation);
         current.xi = r.xi.slice(0, slots.length);
@@ -381,6 +508,19 @@ async function renderLineup(panel) {
         alert(r.msg || "Erro ao salvar");
       }
     };
+  }
+
+  function autoFiltersPayload() {
+    const out = {};
+    if ($("#lf-skip-fatigue")?.checked) {
+      const v = parseInt($("#lf-fatigue-max").value) || 80;
+      if (v > 0 && v < 100) out.skip_fatigue_above = v;
+    }
+    if ($("#lf-skip-form")?.checked) {
+      const v = parseFloat($("#lf-form-min").value) || 0.70;
+      if (v > 0.4 && v < 1.5) out.skip_form_below = v;
+    }
+    return out;
   }
 
   render();
@@ -440,6 +580,14 @@ async function runLiveMatch(panel) {
         <div class="live-events" id="live-events"></div>
         <div class="live-controls" id="live-controls">
           <button id="live-next" class="btn-primary" style="width:auto;padding:10px 22px">▶️ Avançar</button>
+          <button id="live-auto" class="btn-secondary" style="width:auto;padding:10px 22px;margin-left:8px">⏸ Pausar</button>
+          <label style="margin-left:12px;font-size:12px;color:var(--txt-dim)">Velocidade:
+            <select id="live-speed" style="padding:6px;border-radius:6px;border:1px solid var(--line);background:var(--bg2);color:var(--txt)">
+              <option value="300">Rápido</option>
+              <option value="700" selected>Normal</option>
+              <option value="1300">Lento</option>
+            </select>
+          </label>
         </div>
       </div>`;
   }
@@ -492,16 +640,35 @@ async function runLiveMatch(panel) {
 
   $("#live-next").onclick = step;
 
-  // avança automaticamente até o próximo gol ou até 90'
-  async function autoPlay() {
-    while (shown < events.length) {
-      await step();
-      const last = events[shown - 1];
-      if (last.kind === "goal" || last.m >= 90) break;
-      await new Promise(res => setTimeout(res, 250));
+  // controle automático com play/pause e velocidade
+  let autoTimer = null;
+  let running = true;
+  const btnAuto = $("#live-auto");
+  const speedSel = $("#live-speed");
+
+  function nextDelay() {
+    return parseInt(speedSel?.value) || 700;
+  }
+
+  async function tick() {
+    if (!running || shown >= events.length) return;
+    await step();
+    if (running && shown < events.length) {
+      autoTimer = setTimeout(tick, nextDelay());
     }
   }
-  autoPlay();
+
+  function setRunning(v) {
+    running = v;
+    btnAuto.textContent = running ? "⏸ Pausar" : "▶ Continuar";
+    if (running) tick();
+    else clearTimeout(autoTimer);
+  }
+
+  if (btnAuto) btnAuto.onclick = () => setRunning(!running);
+  if (speedSel) speedSel.onchange = () => { clearTimeout(autoTimer); if (running) tick(); };
+
+  setRunning(true);  // inicia automático
 
   // Se houver outros jogos, mostra abaixo
   if (others.length) {
@@ -687,7 +854,7 @@ async function renderFinance(panel) {
     </div>
     <div class="res-card" style="margin-bottom:18px">
       <h3>🎟️ Ingressos</h3>
-      <p>Preço atual: <b>€${t.price}</b> · base: €${t.base} · Público: ${t.public} (${t.fill}% de lotação)</p>
+      <p>Preço atual: <b>R$ ${t.price}</b> · base: R$ ${t.base} · Público: ${t.public} (${t.fill}% de lotação)</p>
     </div>
     <h3>📈 Histórico por temporada</h3>
     <table>
@@ -705,7 +872,7 @@ async function renderStadium(panel) {
     <div class="res-card" style="margin-bottom:14px">
       <h3>🏟️ Estádio</h3>
       <p>Capacidade: <b>${d.capacity.toLocaleString()}</b></p>
-      <p>Preço do ingresso: <b>€${d.price}</b> · base sugerido: €${d.base}</p>
+      <p>Preço do ingresso: <b>R$ ${d.price}</b> · base sugerido: R$ ${d.base}</p>
       <p>Público estimado: <b>${d.public.toLocaleString()}</b> (${d.fill}% de lotação)</p>
       <p>Receita estimada: <b>${d.revenue_fmt}</b></p>
       <p>Torcidômetro: <b>${d.fan_mood}%</b></p>
@@ -757,18 +924,65 @@ async function renderMarket(panel) {
       <label><input id="mk-sale" type="checkbox"> À venda</label>
       <button id="mk-search" class="btn-primary" style="width:auto;padding:10px 18px">Buscar</button>
     </div>
-    <div id="mk-list" class="squad-list"></div>`;
+    <table id="mk-table">
+      <thead>
+        <tr>
+          <th class="center sortable" data-sort="pos">POS</th>
+          <th class="sortable" data-sort="name">Jogador</th>
+          <th class="sortable" data-sort="club">Clube</th>
+          <th class="center sortable" data-sort="age">Idade</th>
+          <th class="center sortable" data-sort="nat">Nac</th>
+          <th class="center sortable" data-sort="ovr">OVR</th>
+          <th class="center sortable" data-sort="pot">POT</th>
+          <th class="right sortable" data-sort="asking">Valor</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="mk-list"></tbody>
+    </table>`;
+
+  let players = d.players.slice();
+  let sortCol = null;
+  let sortDir = 1;
+
   function row(p) {
-    return `<div class="squad-row">
-      <span class="tag-pos ${p.pos}">${p.pos}</span>
-      <span class="sq-name">${p.name} <small>${p.role_label} · ${p.age} anos · ${p.nat}</small></span>
-      <span class="sq-club" style="color:var(--txt-dim)">${p.club}</span>
-      <span class="sq-ovr">OVR ${p.ovr} · POT ${p.pot}</span>
-      <span class="sq-value">${p.asking_fmt}</span>
-      <button class="btn-primary mk-buy" data-id="${p.id}" data-asking="${p.asking}" style="width:auto;padding:6px 12px;font-size:12px">Comprar</button>
-    </div>`;
+    return `<tr>
+      <td class="center"><span class="tag-pos ${p.pos}">${p.pos}</span></td>
+      <td><b>${p.name}</b><br><small>${p.role_label} · ${p.age} anos</small></td>
+      <td>${p.club}</td>
+      <td class="center">${p.age}</td>
+      <td class="center">${p.nat}</td>
+      <td class="center ovr">${p.ovr}</td>
+      <td class="center pot">${p.pot}</td>
+      <td class="right">${p.asking_fmt}</td>
+      <td class="center"><button class="btn-primary mk-buy" data-id="${p.id}" data-asking="${p.asking}" style="width:auto;padding:6px 12px;font-size:12px">Comprar</button></td>
+    </tr>`;
   }
-  $("#mk-list").innerHTML = d.players.map(row).join("");
+
+  function renderRows() {
+    $("#mk-list").innerHTML = players.map(row).join("");
+    bindBuy();
+    panel.querySelectorAll("#mk-table th.sortable").forEach(th => {
+      const col = th.dataset.sort;
+      let label = th.dataset.label || th.textContent.replace(/[▲▼]/g, "").trim();
+      if (!th.dataset.label) th.dataset.label = label;
+      th.textContent = label + (sortCol === col ? (sortDir > 0 ? " ▲" : " ▼") : "");
+    });
+  }
+
+  function sortBy(col) {
+    if (sortCol === col) sortDir = -sortDir;
+    else { sortCol = col; sortDir = 1; }
+    players.sort((a, b) => {
+      let av = a[col], bv = b[col];
+      if (typeof av === "string") av = av.localeCompare ? av.toLowerCase() : av;
+      if (typeof bv === "string") bv = bv.localeCompare ? bv.toLowerCase() : bv;
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * sortDir;
+      return String(av).localeCompare(String(bv)) * sortDir;
+    });
+    renderRows();
+  }
+
   $("#mk-search").onclick = async () => {
     const pos = $("#mk-pos").value || null;
     const maxp = $("#mk-price").value ? parseInt($("#mk-price").value) : null;
@@ -776,9 +990,16 @@ async function renderMarket(panel) {
     const sale = $("#mk-sale").checked;
     const qs = new URLSearchParams({limit: "100", min_ovr: mino, max_ovr: "99", ...(pos && {position: pos}), ...(maxp && {max_price: maxp}), ...(sale && {only_transfer: "1"})});
     const d2 = await api(`/api/market?${qs}`);
-    $("#mk-list").innerHTML = d2.players.map(row).join("");
-    bindBuy();
+    players = d2.players.slice();
+    sortCol = null;
+    sortDir = 1;
+    renderRows();
   };
+
+  panel.querySelectorAll("#mk-table th[data-sort]").forEach(th => {
+    th.onclick = () => sortBy(th.dataset.sort);
+  });
+
   function bindBuy() {
     panel.querySelectorAll(".mk-buy").forEach(b => {
       b.onclick = async () => {
@@ -790,7 +1011,7 @@ async function renderMarket(panel) {
       };
     });
   }
-  bindBuy();
+  renderRows();
 }
 
 // ─── Buscar Time ──────────────────────────────────────────────────────────────
@@ -832,34 +1053,108 @@ async function renderSearchTeam(panel) {
 // ─── Scout ────────────────────────────────────────────────────────────────────
 async function renderScout(panel) {
   panel.innerHTML = `<h2>⭐ Scout</h2><div class="placeholder">⏳ Carregando...</div>`;
-  const d = await api("/api/scout");
+  const d = await api("/api/scout?limit=100");
   if (!d.ok) { panel.innerHTML = `<div class="placeholder">Inicie uma carreira.</div>`; return; }
   panel.innerHTML = `
     <h2>⭐ Scout</h2>
-    <div class="res-card" style="margin-bottom:14px;display:flex;gap:10px;align-items:center">
+    <div class="res-card" style="margin-bottom:14px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+      <label>Posição: <select id="sc-pos"><option value="">Todas</option><option value="GK">GOL</option><option value="DF">ZAG</option><option value="MF">MEI</option><option value="FW">ATA</option></select></label>
       <label>Min OVR: <input id="sc-ovr" type="number" value="70" min="50" max="99" style="width:60px"></label>
+      <label>Max OVR: <input id="sc-maxovr" type="number" value="99" min="50" max="99" style="width:60px"></label>
+      <label>Max preço: <input id="sc-price" type="number" placeholder="R$" style="width:90px"></label>
+      <label>Max idade: <input id="sc-age" type="number" value="40" min="16" max="45" style="width:55px"></label>
       <button id="sc-search" class="btn-primary" style="width:auto;padding:10px 18px">Buscar talentos</button>
     </div>
-    <div id="sc-list" class="squad-list">
-      ${d.players.map(p => `
-        <div class="squad-row">
-          <span class="tag-pos ${p.pos}">${p.pos}</span>
-          <span class="sq-name">${p.name} <small>${p.role_label} · ${p.age} anos · ${p.nat} · ${p.club}</small></span>
-          <span class="sq-ovr">OVR ${p.ovr} · POT ${p.pot}</span>
-          <span class="sq-value">${p.asking_fmt}</span>
-        </div>`).join("")}
-    </div>`;
+    <table id="sc-table">
+      <thead>
+        <tr>
+          <th class="center sortable" data-sort="pos">POS</th>
+          <th class="sortable" data-sort="name">Jogador</th>
+          <th class="sortable" data-sort="club">Clube</th>
+          <th class="center sortable" data-sort="age">Idade</th>
+          <th class="center sortable" data-sort="nat">Nac</th>
+          <th class="center sortable" data-sort="ovr">OVR</th>
+          <th class="center sortable" data-sort="pot">POT</th>
+          <th class="right sortable" data-sort="asking">Valor</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="sc-list"></tbody>
+    </table>`;
+
+  let players = d.players.slice();
+  let sortCol = null;
+  let sortDir = 1;
+
+  function row(p) {
+    return `<tr>
+      <td class="center"><span class="tag-pos ${p.pos}">${p.pos}</span></td>
+      <td><b>${p.name}</b><br><small>${p.role_label} · ${p.age} anos</small></td>
+      <td>${p.club}</td>
+      <td class="center">${p.age}</td>
+      <td class="center">${p.nat}</td>
+      <td class="center ovr">${p.ovr}</td>
+      <td class="center pot">${p.pot}</td>
+      <td class="right">${p.asking_fmt}</td>
+      <td class="center"><button class="btn-primary sc-buy" data-id="${p.id}" data-asking="${p.asking}" style="width:auto;padding:6px 12px;font-size:12px">Contratar</button></td>
+    </tr>`;
+  }
+
+  function renderRows() {
+    $("#sc-list").innerHTML = players.map(row).join("");
+    bindBuy();
+    panel.querySelectorAll("#sc-table th[data-sort]").forEach(th => {
+      const col = th.dataset.sort;
+      th.style.cursor = "pointer";
+      let label = th.textContent.replace(/[▲▼]/g, "");
+      if (sortCol === col) label += sortDir > 0 ? " ▲" : " ▼";
+      th.textContent = label;
+    });
+  }
+
+  function sortBy(col) {
+    if (sortCol === col) sortDir = -sortDir;
+    else { sortCol = col; sortDir = 1; }
+    players.sort((a, b) => {
+      let av = a[col], bv = b[col];
+      if (typeof av === "string") av = av.localeCompare ? av.toLowerCase() : av;
+      if (typeof bv === "string") bv = bv.localeCompare ? bv.toLowerCase() : bv;
+      if (typeof av === "number" && typeof bv === "number") return (av - bv) * sortDir;
+      return String(av).localeCompare(String(bv)) * sortDir;
+    });
+    renderRows();
+  }
+
   $("#sc-search").onclick = async () => {
-    const ovr = parseInt($("#sc-ovr").value) || 60;
-    const d2 = await api(`/api/scout?min_ovr=${ovr}`);
-    $("#sc-list").innerHTML = d2.players.map(p => `
-      <div class="squad-row">
-        <span class="tag-pos ${p.pos}">${p.pos}</span>
-        <span class="sq-name">${p.name} <small>${p.role_label} · ${p.age} anos · ${p.nat} · ${p.club}</small></span>
-        <span class="sq-ovr">OVR ${p.ovr} · POT ${p.pot}</span>
-        <span class="sq-value">${p.asking_fmt}</span>
-      </div>`).join("");
+    const pos = $("#sc-pos").value || null;
+    const mino = parseInt($("#sc-ovr").value) || 0;
+    const maxo = parseInt($("#sc-maxovr").value) || 99;
+    const maxp = $("#sc-price").value ? parseInt($("#sc-price").value) : null;
+    const maxage = parseInt($("#sc-age").value) || 40;
+    const qs = new URLSearchParams({limit: "100", min_ovr: mino, max_ovr: maxo, max_age: maxage, ...(pos && {position: pos}), ...(maxp && {max_price: maxp})});
+    const d2 = await api(`/api/scout?${qs}`);
+    players = d2.players.slice();
+    sortCol = null;
+    sortDir = 1;
+    renderRows();
   };
+
+  panel.querySelectorAll("#sc-table th[data-sort]").forEach(th => {
+    th.onclick = () => sortBy(th.dataset.sort);
+  });
+
+  function bindBuy() {
+    panel.querySelectorAll(".sc-buy").forEach(b => {
+      b.onclick = async () => {
+        const id = parseInt(b.dataset.id);
+        const asking = parseInt(b.dataset.asking);
+        const r = await api("/api/market/buy", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({player_id: id, price: asking})});
+        alert(r.msg || (r.ok ? "Contratado!" : "Negócio recusado."));
+        if (r.ok) renderScout(panel);
+      };
+    });
+  }
+  renderRows();
 }
 
 // ─── Histórico ─────────────────────────────────────────────────────────────────
