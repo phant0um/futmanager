@@ -9,7 +9,7 @@ import hashlib
 
 # Limites de elenco
 MIN_SQUAD = 16
-MAX_SQUAD = 32
+MAX_SQUAD = 30
 
 # Prêmio de compra: clube vendedor cobra acima do valor de mercado
 BUY_PREMIUM = (1.05, 1.35)
@@ -262,31 +262,106 @@ def respond_incoming_offer(conn, career, player_id: int, club_id: int, accept: b
 
 
 def ai_transfer_window(conn, player_club_id: int, rng: random.Random) -> int:
-    """Janela de transferências entre clubes IA — clubes de prestígio alto
-    assediam jovens promissores (≤23 anos) de clubes bem menores. Sem isso,
-    elencos rivais ficavam estagnados (só envelheciam) e a liga não esquentava
-    com o tempo. Retorna nº de transferências."""
-    clubs = conn.execute(
-        "SELECT id, prestige FROM clubs WHERE id != ? ORDER BY prestige DESC", (player_club_id,)
-    ).fetchall()
-    buyers = clubs[:max(1, len(clubs) // 4)]
+    """Janela de transferências entre clubes IA — pequena movimentação
+    para manter a liga viva sem desmontar elencos. Retorna nº de transferências reais."""
+    # 1. NPCs colocam alguns jogadores à venda (poucos). Não conta como transferência.
+    npc_list_to_market(conn, player_club_id, rng)
+
+    # 2. Apenas alguns clubes compram 0-1 jovem promissor
     moved = 0
+    max_total = 12  # teto de transferências reais por temporada
+    clubs = conn.execute(
+        "SELECT id, prestige FROM clubs WHERE id != ? ORDER BY prestige DESC LIMIT 10", (player_club_id,)
+    ).fetchall()
+    if not clubs:
+        return 0
+    rng.shuffle(clubs)
+    buyers = clubs[:rng.randint(2, 4)]
+
+    already_moved = set()
     for buyer_id, buyer_prestige in buyers:
-        if rng.random() > 0.5:
+        if moved >= max_total:
+            break
+        if rng.random() > 0.45:
             continue
         targets = conn.execute("""
             SELECT p.id FROM players p JOIN clubs c ON c.id = p.club_id
             WHERE p.retired=0 AND p.age <= 23 AND p.club_id NOT IN (?, ?)
-              AND c.prestige <= ? - 12
-            ORDER BY p.overall DESC LIMIT 5
-        """, (buyer_id, player_club_id, buyer_prestige or 50)).fetchall()
+              AND c.prestige <= ? - 8 AND p.id NOT IN ({mark})
+            ORDER BY p.overall DESC LIMIT 3
+        """.replace("{mark}", ",".join(["?"]*len(already_moved)) or "-1"),
+        (buyer_id, player_club_id, buyer_prestige or 50, *tuple(already_moved))).fetchall()
         if not targets:
             continue
         pid = rng.choice(targets)[0]
         conn.execute("UPDATE players SET club_id=? WHERE id=?", (buyer_id, pid))
+        already_moved.add(pid)
         moved += 1
+        if moved >= max_total:
+            break
     conn.commit()
     return moved
+
+
+def npc_list_to_market(conn, player_club_id: int, rng: random.Random) -> int:
+    """
+    IA de clubes NPC decide quem listar no mercado.
+    - Reservas (fora top-11) com idade > 24: 30% de chance
+    - Excesso de posição (ex: 5 FW em 4-4-2): lista excesso
+    - Caixa negativo: lista estrelas a 1.5x valor
+    Retorna número de jogadores listados.
+    """
+    listed = 0
+    clubs = conn.execute(
+        "SELECT id, prestige FROM clubs WHERE id != ?", (player_club_id,)
+    ).fetchall()
+
+    for cid, prestige in clubs:
+        players = conn.execute("""
+            SELECT id, name, overall, value, position, age,
+                   ROW_NUMBER() OVER (PARTITION BY position ORDER BY overall DESC) as pos_rank
+            FROM players WHERE club_id=? AND retired=0
+        """, (cid,)).fetchall()
+
+        # Reservas não-titulares
+        top = {p["id"] for p in players if p["pos_rank"] == 1}
+        by_pos = {}
+        for p in players:
+            by_pos.setdefault(p["position"], []).append(p)
+
+        for p in players:
+            pid = p["id"]
+            # Já listado, pula
+            row = conn.execute(
+                "SELECT transfer_listed, loan_listed FROM players WHERE id=?", (pid,)
+            ).fetchone()
+            if row and (row["transfer_listed"] or row["loan_listed"]):
+                continue
+
+            should_list = False
+
+            # Reserva velho
+            if pid not in top and (p["age"] or 25) > 24:
+                if rng.random() < 0.10:
+                    should_list = True
+
+            # Excesso de posição
+            # Formação padrão: 1 GK, 4-5 DF, 3-5 MF, 1-3 FW
+            limits = {"GK": 2, "DF": 6, "MF": 7, "FW": 5}
+            pos_count = len(by_pos.get(p["position"], []))
+            pos_limit = limits.get(p["position"], 5)
+            if p["pos_rank"] > pos_limit and pos_count > pos_limit:
+                if rng.random() < 0.18:
+                    should_list = True
+
+            if should_list:
+                conn.execute(
+                    "UPDATE players SET transfer_listed=1 WHERE id=?", (pid,)
+                )
+                listed += 1
+
+    conn.commit()
+    return listed
 
 
 def _find_ai_buyer(conn, exclude_club: int, overall: int) -> int:

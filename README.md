@@ -9,7 +9,9 @@ administra as finanças do estádio e sobrevive à pressão do conselho — temp
 
 ## Destaques
 
-- **GUI nativa** (Tkinter) — janela desktop, tema claro de alto contraste. Sem servidor, sem browser.
+- **Frontend web principal** — interface mais bonita e moderna, roda no navegador padrão.
+- **GUI compacta offline** (Tkinter) — fallback leve para uso sem browser.
+- **Modo terminal** (`--cli`) — controle total via texto.
 - **Zero dependências em runtime** — só a stdlib do Python. Empacota como `.app` macOS (~11 MB).
 - **Modo carreira completo:**
   - Evolução/regressão por idade (cresce até ~27, estabiliza, decai após 32), aposentadorias e *newgens*
@@ -23,9 +25,17 @@ administra as finanças do estádio e sobrevive à pressão do conselho — temp
 ## Rodar
 
 ```bash
-python3 main.py          # GUI nativa (padrão)
+python3 main.py          # web principal (sobe servidor + abre navegador)
+python3 main.py --gui    # GUI compacta (Tkinter) - fallback offline
 python3 main.py --cli    # modo terminal
-python3 main.py --web    # servidor web local + browser
+python3 main.py --web    # servidor web (sem auto-abrir browser)
+```
+
+Ou use os scripts prontos:
+
+```bash
+bash jogar.sh      # web principal
+bash jogar_gui.sh  # GUI compacta
 ```
 
 A database inicial já vem pronta em `data/futmanager.db`.
@@ -48,8 +58,10 @@ de apresentação sobre essa mesma API. Fonte única de verdade.
 gameapi.py        camada de jogo (estado, jogar, escalação, mercado, estádio)
 engine/           simulação, temporada, carreira, finanças, copas, estaduais, mercado
 db/               models + migração de schema
-gui/app.py        GUI Tkinter
-web/              frontend web (modo --web)
+gui/app.py        GUI Tkinter original (mantida para compatibilidade)
+gui/compact.py    GUI Tkinter compacta (fallback offline)
+web/              frontend web principal (modo padrão)
+launch_web.py     launcher: sobe servidor + abre navegador
 scripts/          pipeline de database (rebuild, geração de elencos, anonimização)
 ```
 

@@ -133,7 +133,11 @@ def generate_squad(club_id: int, club_name: str, prestige: int, country: str) ->
             "stamina":     min(99, attrs["stamina"]     + bonus),
             "mental":      min(99, attrs["mental"]      + bonus),
             "overall":     min(99, overall),
+            "potential":   min(99, overall + rng.randint(5, 20)),
             "source":      "generated",
+            "star_player": 0,
+            "minutes_played": 0,
+            "fame": 0,
         })
     return players
 
@@ -183,10 +187,12 @@ def run(only_empty: bool = True, min_squad: int = 0):
                 INSERT OR IGNORE INTO players(
                     id, name, position, nationality, birth_date, club_id,
                     pace, technique, strength, finishing, passing,
-                    defending, goalkeeping, stamina, mental, overall, source
+                    defending, goalkeeping, stamina, mental, overall, potential, source,
+                    star_player, minutes_played, fame
                 ) VALUES (:id,:name,:position,:nationality,:birth_date,:club_id,
                           :pace,:technique,:strength,:finishing,:passing,
-                          :defending,:goalkeeping,:stamina,:mental,:overall,:source)
+                          :defending,:goalkeeping,:stamina,:mental,:overall,:potential,:source,
+                          :star_player, :minutes_played, :fame)
             """, p)
             total += 1
 

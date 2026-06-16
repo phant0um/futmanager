@@ -104,6 +104,10 @@ class Player:
     contract_until: Optional[int] = None
     form: float = 1.0       # 0.85–1.15 — tendência recente (gols, vitórias)
     fitness: int = 100      # 0-100 — condição física atual (cai jogando, recupera descansando)
+    potential: int = 50
+    star_player: int = 0    # 0 ou 1 — estrela do clube
+    minutes_played: int = 0  # minutos na temporada (para evolução)
+    fame: int = 0           # fama/reputação do jogador
 
     @property
     def condition_mult(self) -> float:

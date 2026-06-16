@@ -19,7 +19,22 @@ from paths import db_path
 def conn():
     c = sqlite3.connect(db_path())
     c.row_factory = sqlite3.Row
+    _ensure_player_columns(c)
     return c
+
+
+def _ensure_player_columns(c):
+    """Migra colunas novas se o save foi criado antes delas."""
+    cols = {r[1] for r in c.execute("PRAGMA table_info(players)").fetchall()}
+    if 'star_player' not in cols:
+        c.execute("ALTER TABLE players ADD COLUMN star_player INTEGER DEFAULT 0")
+    if 'minutes_played' not in cols:
+        c.execute("ALTER TABLE players ADD COLUMN minutes_played INTEGER DEFAULT 0")
+    if 'fame' not in cols:
+        c.execute("ALTER TABLE players ADD COLUMN fame INTEGER DEFAULT 0")
+    if 'potential' not in cols:
+        c.execute("ALTER TABLE players ADD COLUMN potential INTEGER DEFAULT 0")
+    c.commit()
 
 
 # ─── Cores de clube (determinístico do nome) ─────────────────────────────────
@@ -88,7 +103,8 @@ def api_squad(c):
     rows = c.execute("""
         SELECT id, name, position, age, overall, potential, value, wage,
                contract_until, loan_from_club, form, fitness,
-               pace, technique, strength, finishing, passing, defending, stamina
+               pace, technique, strength, finishing, passing, defending, stamina,
+               star_player, transfer_listed, loan_listed
         FROM players WHERE club_id=? AND retired=0
         ORDER BY CASE position WHEN 'GK' THEN 1 WHEN 'DF' THEN 2
                                WHEN 'MF' THEN 3 WHEN 'FW' THEN 4 END, overall DESC
@@ -105,6 +121,9 @@ def api_squad(c):
             "contract": p["contract_until"], "loan": p["loan_from_club"] is not None,
             "fitness": p["fitness"] if p["fitness"] is not None else 100,
             "form": round(p["form"] if p["form"] is not None else 1.0, 2),
+            "star_player": bool(p["star_player"]) if "star_player" in p.keys() else False,
+            "transfer_listed": bool(p["transfer_listed"]) if "transfer_listed" in p.keys() else False,
+            "loan_listed": bool(p["loan_listed"]) if "loan_listed" in p.keys() else False,
         })
     return out
 
@@ -285,6 +304,40 @@ def api_set_transfer_listed(c, player_id, listed: bool):
     return {"ok": True, "listed": listed}
 
 
+def api_set_loan_listed(c, player_id, listed: bool):
+    """Liga/desliga jogador do próprio elenco disponível por empréstimo."""
+    car = get_active_career(c)
+    if not car:
+        return {"ok": False, "msg": "Sem carreira ativa."}
+    p = c.execute("SELECT club_id FROM players WHERE id=?", (player_id,)).fetchone()
+    if not p or p["club_id"] != car["manager_club_id"]:
+        return {"ok": False, "msg": "Jogador não é do seu elenco."}
+    c.execute("UPDATE players SET loan_listed=? WHERE id=?", (1 if listed else 0, player_id))
+    c.commit()
+    return {"ok": True, "listed": listed}
+
+
+def api_set_market_status(c, player_id, status):
+    """
+    Define disponibilidade do jogador no mercado.
+    status: 'none' | 'sale' | 'loan'
+    """
+    car = get_active_career(c)
+    if not car:
+        return {"ok": False, "msg": "Sem carreira ativa."}
+    p = c.execute("SELECT club_id FROM players WHERE id=?", (player_id,)).fetchone()
+    if not p or p["club_id"] != car["manager_club_id"]:
+        return {"ok": False, "msg": "Jogador não é do seu elenco."}
+    if status == "sale":
+        c.execute("UPDATE players SET transfer_listed=1, loan_listed=0 WHERE id=?", (player_id,))
+    elif status == "loan":
+        c.execute("UPDATE players SET transfer_listed=0, loan_listed=1 WHERE id=?", (player_id,))
+    else:
+        c.execute("UPDATE players SET transfer_listed=0, loan_listed=0 WHERE id=?", (player_id,))
+    c.commit()
+    return {"ok": True, "status": status}
+
+
 def api_table(c):
     car = get_active_career(c)
     if not car:
@@ -422,6 +475,7 @@ def create_career(club_id, coach_name):
     career = _gac(c)
     create_player_coach(c, career, coach_name)
     set_expectation(c, career)
+    _assign_stars_on_new_career(c, career)
     c.close()
     return {"ok": True}
 
@@ -443,6 +497,27 @@ def _club_obj(conn, club_id):
              league_id=r["league_id"] or 0, prestige=r["prestige"])
     c.players = players
     return c
+
+
+STAR_EVERY_ROUNDS = 3  # evolução + tick financeiro a cada 3 rodadas
+
+
+def _maybe_midseason_tick(conn, career, round_played):
+    """
+    Tick de meia-temporada: evolução periódica + finanças semanais.
+    Roda a cada STAR_EVERY_ROUNDS rodadas jogadas.
+    """
+    from engine.evolution import evolve_players, tick_weekly_finance
+    if round_played > 0 and round_played % STAR_EVERY_ROUNDS == 0:
+        evolve_players(conn, round_played, career["season_year"])
+    tick_weekly_finance(conn, career["manager_club_id"])
+
+
+def _assign_stars_on_new_career(conn, career):
+    """Marca estrelas no elenco do técnico humano quando carreira é criada."""
+    from engine.evolution import assign_star_players
+    assign_star_players(conn, seed=career["season_year"] * 7 + career["manager_club_id"])
+
 
 
 def _player_country_state(conn, club_id):
@@ -552,6 +627,7 @@ def _web_league_round(conn, career):
     conn.execute("UPDATE career SET current_round=?, updated_at=datetime('now') WHERE id=?",
                  (cr + 1, career["id"]))
     conn.commit()
+    _maybe_midseason_tick(conn, career, cr + 1)
     fresh = get_active_career(conn)
     _notify_incoming_offers(conn, fresh)
     _notify_media(conn, fresh, your)  # era `career` (stale current_round) — divergia
@@ -644,6 +720,7 @@ def play_round_live(conn):
     conn.execute("UPDATE career SET current_round=?, updated_at=datetime('now') WHERE id=?",
                  (cr + 1, career["id"]))
     conn.commit()
+    _maybe_midseason_tick(conn, career, cr + 1)
     fresh = get_active_career(conn)
     _notify_incoming_offers(conn, fresh)
     your_match = next((m for m in matches if m["is_player"]), None)
@@ -692,7 +769,7 @@ def _web_copa(conn, career, comp, st):
             out["won"] = True
     else:
         if any(w == cid for _, w in winners):
-            conn.execute("UPDATE career SET money=money+22000000 WHERE id=?", (career["id"],))
+            conn.execute("UPDATE career SET money=money+220****0000 WHERE id=?", (career["id"],))
             out["advanced"] = True
         elif COPA.player_tie(conn, career, comp, st) is None and cid in ids:
             out["eliminated"] = True
@@ -808,7 +885,7 @@ def play_copa_live(conn):
             out["won"] = True
     else:
         if any(w == cid for _, w in winners):
-            conn.execute("UPDATE career SET money=money+22000000 WHERE id=?", (career["id"],))
+            conn.execute("UPDATE career SET money=money+220****0000 WHERE id=?", (career["id"],))
             out["advanced"] = True
         elif COPA.player_tie(conn, career, comp, st) is None and cid in ids:
             out["eliminated"] = True
@@ -1122,6 +1199,141 @@ def save_stadium(c, price, training, focus=None):
     c.commit()
     return {"ok": True}
 
+
+
+
+# ─── Finanças ─────────────────────────────────────────────────────────────────
+
+def api_finance(c):
+    from engine.finance import wage_bill, base_ticket_price, stadium_revenue, attendance_fill
+    car = get_active_career(c)
+    if not car:
+        return {"ok": False}
+    cid = car["manager_club_id"]
+    club = c.execute("""SELECT capacity, prestige, ticket_price, fan_mood FROM clubs WHERE id=?""", (cid,)).fetchone()
+    rows = c.execute("""SELECT season_year, manager_pos
+                        FROM season_history
+                        WHERE career_id=?
+                        ORDER BY season_year DESC""", (car["id"],)).fetchall()
+    hist = []
+    for r in rows:
+        hist.append({
+            "season": r["season_year"], "pos": r["manager_pos"] or "—",
+        })
+    wage = wage_bill(c, cid)
+    base = base_ticket_price(club["prestige"])
+    price = club["ticket_price"] or base
+    fm = club["fan_mood"] if club["fan_mood"] is not None else 50
+    fill = attendance_fill(club["prestige"], 10, 20, price, fm)
+    rev = stadium_revenue(club["capacity"] or 0, club["prestige"], 10, 20, price, fm)
+    return {
+        "ok": True,
+        "money": car["money"], "money_fmt": fmt_money(car["money"]),
+        "wage_bill": wage, "wage_bill_fmt": fmt_money(wage),
+        "budget": car["money"], "budget_fmt": fmt_money(car["money"]),
+        "ticket": {"price": price, "base": base, "fill": round(fill * 100),
+                   "public": int((club["capacity"] or 0) * fill), "revenue": rev,
+                   "revenue_fmt": fmt_money(rev)},
+        "history": hist,
+    }
+
+
+# ─── Histórico de partidas ────────────────────────────────────────────────────
+
+def api_match_history(c, limit=30):
+    car = get_active_career(c)
+    if not car:
+        return {"ok": False}
+    cid = car["manager_club_id"]
+    rows = c.execute("""SELECT f.id, f.season_year, f.round_idx, f.home_id, f.away_id,
+                               f.home_goals, f.away_goals, f.home_yellows, f.home_reds,
+                               f.away_yellows, f.away_reds, f.played,
+                               hc.name home, ac.name away
+                        FROM fixtures f
+                        JOIN clubs hc ON hc.id=f.home_id
+                        JOIN clubs ac ON ac.id=f.away_id
+                        WHERE f.career_id=? AND f.played=1
+                          AND (f.home_id=? OR f.away_id=?)
+                        ORDER BY f.season_year DESC, f.round_idx DESC
+                        LIMIT ?""", (car["id"], cid, cid, limit)).fetchall()
+    out = []
+    for r in rows:
+        is_home = r["home_id"] == cid
+        gf = r["home_goals"] if is_home else r["away_goals"]
+        ga = r["away_goals"] if is_home else r["home_goals"]
+        res = "V" if gf > ga else ("E" if gf == ga else "D")
+        out.append({
+            "id": r["id"], "season": r["season_year"], "round": r["round_idx"],
+            "home": r["home"], "away": r["away"],
+            "hg": r["home_goals"], "ag": r["away_goals"],
+            "gf": gf, "ga": ga, "result": res,
+            "cards": f"{r['home_yellows']+r['away_yellows']}🟨 {r['home_reds']+r['away_reds']}🟥"
+        })
+    return {"ok": True, "matches": out}
+
+
+# ─── Buscar time ──────────────────────────────────────────────────────────────
+
+def api_search_clubs(c, term=""):
+    car = get_active_career(c)
+    if not car:
+        return {"ok": False}
+    q = "SELECT id, name, league_id, prestige FROM clubs WHERE name LIKE ? ORDER BY prestige DESC, name LIMIT 40"
+    rows = c.execute(q, (f"%{term}%",)).fetchall()
+    return {"ok": True, "clubs": [{"id": r["id"], "name": r["name"], "prestige": r["prestige"]} for r in rows]}
+
+
+def api_club_squad(c, club_id):
+    from engine.knowledge import cm_role
+    rows = c.execute("""SELECT id, name, position, age, overall, potential, value, wage
+                        FROM players
+                        WHERE club_id=? AND retired=0
+                        ORDER BY overall DESC""", (club_id,)).fetchall()
+    out = []
+    for r in rows:
+        role, role_label = cm_role(r["position"], dict(r))
+        out.append({
+            "id": r["id"], "name": r["name"], "pos": r["position"] or "?",
+            "role": role, "role_label": role_label,
+            "age": r["age"] or 0, "ovr": r["overall"], "pot": r["potential"],
+            "value": r["value"], "value_fmt": fmt_money(r["value"]),
+            "wage": r["wage"], "wage_fmt": fmt_money(r["wage"] or 0),
+        })
+    club = c.execute("SELECT name, prestige FROM clubs WHERE id=?", (club_id,)).fetchone()
+    return {"ok": True, "club": {"name": club["name"], "prestige": club["prestige"]}, "players": out, "count": len(out)}
+
+
+# ─── Scout ─────────────────────────────────────────────────────────────────────
+
+def api_scout_players(c, min_ovr=60, limit=50):
+    from engine.knowledge import cm_role
+    from engine.transfer import resistance_mult, buy_price
+    car = get_active_career(c)
+    if not car:
+        return {"ok": False}
+    cid = car["manager_club_id"]
+    prestige = c.execute("SELECT prestige FROM clubs WHERE id=?", (cid,)).fetchone()["prestige"]
+    rows = c.execute("""SELECT p.id, p.name, p.position, p.age, p.overall, p.potential,
+                               p.value, p.nationality, c.name club, c.prestige seller_prestige
+                        FROM players p JOIN clubs c ON c.id=p.club_id
+                        WHERE p.retired=0 AND p.club_id<>?
+                          AND p.overall>=?
+                        ORDER BY p.potential DESC, p.overall DESC
+                        LIMIT ?""", (cid, min_ovr, limit)).fetchall()
+    out = []
+    for r in rows:
+        role, role_label = cm_role(r["position"], dict(r))
+        mult = resistance_mult(r["seller_prestige"], prestige, r["overall"], False)
+        asking = int(buy_price(r["value"], r["id"], car["id"], car["season_year"]) * mult)
+        out.append({
+            "id": r["id"], "name": r["name"], "pos": r["position"] or "?",
+            "role": role, "role_label": role_label,
+            "age": r["age"] or 0, "ovr": r["overall"], "pot": r["potential"],
+            "nat": r["nationality"] or "?", "club": r["club"],
+            "value": r["value"], "value_fmt": fmt_money(r["value"]),
+            "asking": asking, "asking_fmt": fmt_money(asking),
+        })
+    return {"ok": True, "players": out, "count": len(out)}
 
 # ─── Mercado de transferências ──────────────────────────────────────────────────
 

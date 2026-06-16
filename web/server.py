@@ -16,7 +16,12 @@ ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 import gameapi as G
 from gameapi import (conn, api_state, api_squad, api_leagues, api_clubs, api_table,
-                     api_next, api_play, create_career, api_saves, save_load, save_delete)
+                     api_next, api_play, create_career, api_saves, save_load, save_delete,
+                     api_set_market_status, api_player_detail, api_lineup, save_lineup, auto_lineup_ids,
+                     play_round_live, api_finance, api_stadium, save_stadium, api_market,
+                     api_buy, api_player_terms, api_finalize_transfer, api_incoming_offers,
+                     api_respond_offer, api_search_clubs, api_club_squad, api_scout_players,
+                     api_match_history)
 
 STATIC = Path(__file__).parent / "static"
 PORT = 8765
@@ -60,6 +65,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(api_state(c))
             if p == "/api/squad":
                 return self._json(api_squad(c))
+            if p == "/api/lineup":
+                return self._json(api_lineup(c))
             if p == "/api/leagues":
                 return self._json(api_leagues(c))
             if p == "/api/clubs":
@@ -70,6 +77,25 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(api_saves())
             if p == "/api/next":
                 return self._json(api_next(c))
+            if p == "/api/finance":
+                return self._json(api_finance(c))
+            if p == "/api/stadium":
+                return self._json(api_stadium(c))
+            if p == "/api/market":
+                return self._json(api_market(c, position=q.get("position", [None])[0],
+                                            max_price=int(q["max_price"][0]) if q.get("max_price") else None,
+                                            min_ovr=int(q.get("min_ovr", [0])[0]),
+                                            max_ovr=int(q.get("max_ovr", [99])[0]),
+                                            only_transfer=bool(q.get("only_transfer", [False])[0]),
+                                            limit=int(q.get("limit", [200])[0])))
+            if p == "/api/search-clubs":
+                return self._json(api_search_clubs(c, q.get("term", [""])[0]))
+            if p == "/api/club-squad":
+                return self._json(api_club_squad(c, int(q["id"][0])))
+            if p == "/api/scout":
+                return self._json(api_scout_players(c, min_ovr=int(q.get("min_ovr", [60])[0])))
+            if p == "/api/history":
+                return self._json(api_match_history(c, limit=int(q.get("limit", [30])[0])))
             self.send_response(404); self.end_headers()
         finally:
             c.close()
@@ -84,10 +110,65 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(save_load(body.get("slug")))
         if u.path == "/api/save/delete":
             return self._json(save_delete(body.get("slug")))
+        if u.path == "/api/play/live":
+            c = conn()
+            try:
+                return self._json(play_round_live(c))
+            finally:
+                c.close()
+        if u.path == "/api/stadium/save":
+            c = conn()
+            try:
+                return self._json(save_stadium(c, body.get("price"), body.get("training"), body.get("focus")))
+            finally:
+                c.close()
+        if u.path == "/api/market/buy":
+            c = conn()
+            try:
+                return self._json(api_buy(c, int(body.get("player_id")), int(body.get("price"))))
+            finally:
+                c.close()
+        if u.path == "/api/market/terms":
+            c = conn()
+            try:
+                return self._json(api_player_terms(c, int(body.get("player_id")), int(body.get("fee"))))
+            finally:
+                c.close()
+        if u.path == "/api/market/finalize":
+            c = conn()
+            try:
+                return self._json(api_finalize_transfer(c, int(body.get("player_id")), int(body.get("fee"), int(body.get("wage")))))
+            finally:
+                c.close()
+        if u.path == "/api/market/respond":
+            c = conn()
+            try:
+                return self._json(api_respond_offer(c, int(body.get("player_id")), int(body.get("club_id")), body.get("accept")))
+            finally:
+                c.close()
         if u.path == "/api/play":
             c = conn()
             try:
                 return self._json(api_play(c))
+            finally:
+                c.close()
+        if u.path == "/api/player/market":
+            c = conn()
+            try:
+                return self._json(api_set_market_status(c, int(body.get("player_id")), body.get("status", "none")))
+            finally:
+                c.close()
+        if u.path == "/api/lineup/save":
+            c = conn()
+            try:
+                return self._json(save_lineup(c, body.get("formation"), body.get("style"),
+                                              body.get("xi", []), body.get("positions", {})))
+            finally:
+                c.close()
+        if u.path == "/api/lineup/auto":
+            c = conn()
+            try:
+                return self._json({"ok": True, "xi": auto_lineup_ids(c, body.get("formation"))})
             finally:
                 c.close()
         self.send_response(404); self.end_headers()

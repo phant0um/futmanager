@@ -28,7 +28,8 @@ except Exception:
 # ─── Constantes de carreira ──────────────────────────────────────────────────
 
 PEAK_AGE = 27
-NEWGENS_PER_CLUB = (3, 5)        # min, max por temporada
+SQUAD_LIMIT = 30                 # máximo de jogadores por elenco
+NEWGENS_PER_CLUB = (1, 2)        # min, max por temporada
 NEWGEN_AGE = (16, 18)
 
 ATTR_COLS = ["pace", "technique", "strength", "finishing",
@@ -174,6 +175,30 @@ def process_retirements(conn, rng: random.Random) -> list[dict]:
     return retired
 
 
+# ─── Limite de elenco NPC ─────────────────────────────────────────────────────
+
+def _trim_npc_squads(conn, rng: random.Random):
+    """Aposenta jogadores velhos sem clube e libera excesso de elencos IA."""
+    # Aposenta agentes livres velhos (mercado secundário)
+    conn.execute("""
+        UPDATE players SET retired=1
+        WHERE retired=0 AND club_id IS NULL AND age >= 30
+    """)
+    # Limita elencos IA a SQUAD_LIMIT jogadores (hard cap)
+    clubs = conn.execute("SELECT id FROM clubs").fetchall()
+    for (cid,) in clubs:
+        while True:
+            rows = conn.execute("""
+                SELECT id FROM players
+                WHERE club_id=? AND retired=0
+                ORDER BY overall ASC
+                LIMIT 1 OFFSET ?
+            """, (cid, SQUAD_LIMIT - 1)).fetchall()
+            if not rows:
+                break
+            conn.execute("UPDATE players SET club_id=NULL WHERE id=?", (rows[0][0],))
+    conn.commit()
+
 # ─── Geração de newgens ──────────────────────────────────────────────────────
 
 # Distribuição de posições num elenco jovem
@@ -191,7 +216,17 @@ def generate_newgens(conn, season_year: int, rng: random.Random) -> int:
 
     total = 0
     for club_id, club_name, prestige, country in clubs:
-        n = rng.randint(*NEWGENS_PER_CLUB)
+        # Respeita limite de elenco: se já estiver cheio, não gera newgens
+        squad_size = conn.execute(
+            "SELECT COUNT(*) FROM players WHERE club_id=? AND retired=0", (club_id,)
+        ).fetchone()[0]
+        if squad_size >= SQUAD_LIMIT:
+            continue
+        max_new = max(0, SQUAD_LIMIT - squad_size)
+        n = min(rng.randint(*NEWGENS_PER_CLUB), max_new)
+        existing_names = {r[0].lower() for r in conn.execute(
+            "SELECT name FROM players WHERE club_id=? AND retired=0", (club_id,)
+        ).fetchall()}
         for i in range(n):
             seed = int(hashlib.md5(
                 f"newgen:{season_year}:{club_id}:{i}".encode()
@@ -207,9 +242,23 @@ def generate_newgens(conn, season_year: int, rng: random.Random) -> int:
             # Overall atual: jovem cru, bem abaixo do potencial
             overall = max(40, potential - prng.randint(8, 22))
 
-            name = _get_names(country, 1, seed)[0] + " " + _last_name(country, prng)
+            first = _unique_first_name(seed, prng)
+            last = _last_name(country, prng)
+            name = f"{first} {last}"
+            # Garantir nome único dentro do clube na geração desta temporada
+            attempts = 0
+            while any(existing.lower() == name.lower() for existing in existing_names) and attempts < 30:
+                first = _unique_first_name(seed + attempts + 1000, prng)
+                last = _last_name(country, prng)
+                name = f"{first} {last}"
+                attempts += 1
+            existing_names.add(name)
 
             attrs = _newgen_attributes(pos, overall, prng)
+            # Estrela: futura promessa. Só jovens com potencial alto viram estrelas.
+            star_chance = 0.0 if potential < 78 else 0.05 + min(0.45, (potential - 78) * 0.025)
+            star_player = 1 if prng.random() < star_chance else 0
+
             # Salário modesto de jovem + contrato longo (3-5 anos)
             wage = max(40_000, int(overall ** 2 * 30))
             contract_until = season_year + prng.randint(3, 5)
@@ -219,14 +268,14 @@ def generate_newgens(conn, season_year: int, rng: random.Random) -> int:
                     pace, technique, strength, finishing, passing,
                     defending, goalkeeping, stamina, mental,
                     overall, potential, wage, contract_until,
-                    is_newgen, retired, source
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,0,'newgen')
+                    is_newgen, retired, source, star_player
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,0,'newgen',?)
             """, (
                 name, pos, country, age, club_id,
                 attrs["pace"], attrs["technique"], attrs["strength"],
                 attrs["finishing"], attrs["passing"], attrs["defending"],
                 attrs["goalkeeping"], attrs["stamina"], attrs["mental"],
-                overall, potential, wage, contract_until,
+                overall, potential, wage, contract_until, star_player,
             ))
             total += 1
     return total
@@ -249,6 +298,40 @@ _LAST_NAMES = {
 def _last_name(country: str, rng: random.Random) -> str:
     pool = _LAST_NAMES.get(country, _LAST_NAMES["default"])
     return rng.choice(pool)
+
+_FIRST_NAMES = [
+    "João", "Pedro", "Lucas", "Gabriel", "Matheus", "Rafael", "Bruno", "Felipe",
+    "Gustavo", "Guilherme", "Daniel", "Henrique", "Vinícius", "Leonardo", "Mateus",
+    "Thiago", "Rodrigo", "Marcos", "André", "Diego", "Vítor", "Samuel", "Igor",
+    "David", "Alex", "César", "Júlio", "Renan", "Wallace", "Victor", "Enzo",
+    "Arthur", "Bernardo", "Caio", "Davi", "Eduardo", "Fernando", "Heitor", "Isaac",
+    "Joaquim", "Kauã", "Lorenzo", "Miguel", "Noah", "Otávio", "Pietro", "Raul",
+    "Silas", "Tiago", "Ulisses", "Valentim", "Wagner", "Xavier", "Yuri", "Zeca",
+    "Antônio", "Breno", "Carlos", "Dante", "Emílio", "Fabrício", "Gael", "Hugo",
+    "Ian", "Jonas", "Kevin", "Luan", "Murilo", "Natan", "Oliver", "Patrick",
+    "Quentin", "Ryan", "Sebastião", "Tobias", "Uriel", "Vicente", "William", "Yago",
+    "Adriel", "Benício", "Calebe", "Derek", "Eliel", "Francisco", "Gilberto",
+    "Horácio", "Ivan", "José", "Kleber", "Leandro", "Maicon", "Nelson", "Osvaldo",
+    "Paulo", "Ricardo", "Sérgio", "Tomás", "Ubirajara", "Vanderlei", "Wesley",
+    "Abel", "Baltazar", "Ciro", "Damião", "Estêvão", "Flávio", "Gaspar", "Heriberto",
+    "Inácio", "Júlio", "Kaique", "Laerte", "Marcelo", "Nícias", "Orlando", "Plínio",
+    "Queiroz", "Rafael", "Saulo", "Tadeu", "Umberto", "Válter", "Washington", "Yan",
+    "Átila", "Bento", "Cláudio", "Domingos", "Emanuel", "Frederico", "Gerson",
+    "Humberto", "Ítalo", "Jacó", "Kleberson", "Lourenço", "Martinho", "Norberto",
+    "Ovídio", "Percival", "Quirino", "Roberto", "Salvador", "Teodoro", "Urbano",
+    "Virgílio", "Waldemar", "Xisto", "Yolando"
+]
+
+def _unique_first_name(seed: int, rng: random.Random) -> str:
+    base_seed = random.Random(seed)
+    if base_seed.random() < 0.55:
+        return base_seed.choice(_FIRST_NAMES)
+    # composite name
+    part1 = base_seed.choice(["Lu", "Ma", "Ca", "An", "Thi", "Le", "Ra", "Pe", "Jo", "Di",
+                              "Br", "Gu", "Fe", "Ri", "Sa", "Da", "Mi", "Na", "Se", "To"])
+    part2 = base_seed.choice(["go", "te", "ri", "co", "lo", "do", "no", "so", "to", "mo",
+                              "ro", "ni", "vo", "po", "bo", "zo", "ça", "la", "ma", "ra"])
+    return (part1 + part2).title()
 
 
 def _newgen_attributes(pos: str, overall: int, rng: random.Random) -> dict:
@@ -425,6 +508,9 @@ def advance_season(conn, season_year: int, seed: int | None = None,
     # 4. Newgens
     n_newgens = generate_newgens(conn, season_year + 1, rng)
     conn.commit()
+
+    # 4b. Aposenta/limpa excesso de elenco IA para evitar bloat
+    _trim_npc_squads(conn, rng)
 
     # 5. Valores de mercado
     update_market_values(conn)

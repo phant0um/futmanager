@@ -10,7 +10,7 @@ atualizado: 2026-06-03
 > Clone do Brasfoot/Elifoot: gerenciador de futebol por temporadas.
 > Modo carreira: você é o **técnico**, gere o clube, escala, negocia,
 > assiste aos jogos ao vivo, sobrevive à pressão do conselho.
-> Zero dependências em runtime (só stdlib). **GUI nativa (Tkinter)**; empacota como `.app` macOS windowed.
+> Zero dependências em runtime (só stdlib). **Frontend web principal**; GUI compacta Tkinter como fallback offline; empacota como `.app` macOS windowed.
 
 ---
 
@@ -24,7 +24,7 @@ atualizado: 2026-06-03
 | Deps build | `pyinstaller` |
 | Tamanho `.app` | ~8MB |
 | Dados | 9 ligas · 202 clubes · ~5.000 jogadores reais (FC26) |
-| Interface | **GUI nativa (Tkinter)** padrão · CLI (`--cli`) · web local (`--web`) |
+| Interface | **Web local (padrão)** · GUI compacta (`--gui`) · CLI (`--cli`) · web sem auto-open (`--web`) |
 
 ---
 
@@ -48,19 +48,18 @@ git --version            # para baixar dados OpenFootball
 
 ```bash
 cd /Users/michelcsasznik/Dev/projetos/brasfoot
-python3 main.py            # GUI nativa (Tkinter) — padrão
-./jogar.sh                 # atalho equivalente
+python3 main.py            # web principal (sobe servidor + abre navegador)
+./jogar.sh                 # atalho para web principal
+python3 main.py --gui      # GUI compacta (Tkinter) — fallback offline
+./jogar_gui.sh             # atalho para GUI compacta
 python3 main.py --cli      # modo terminal
-python3 main.py --web      # servidor web local + browser (http://localhost:8765)
+python3 main.py --web      # servidor web local (http://localhost:8765) sem auto-abrir
 ```
 
-A database já vem pronta em `data/futmanager.db`. A janela do jogo abre direto:
-tela de saves → novo/carregar → hub (Jogar · Elenco · Classificação · Escalação ·
-Mercado · Estádio & CT).
-
-**Arquitetura:** toda a lógica de jogo vive em `gameapi.py` (funções I/O-free
-que recebem `conn` e devolvem dicts). A GUI (`gui/app.py`) e o web (`web/server.py`)
-são só camadas de apresentação sobre essa mesma API. Fonte única de verdade.
+A database já vem pronta em `data/futmanager.db`. A interface web abre no navegador
+padrão: tela de saves → novo/carregar → hub (Jogar · Elenco · Classificação · Escalação ·
+Mercado · Estádio & CT). A GUI compacta oferece um subconjunto das ações para uso
+offline/leve.
 
 ### 3.2 Empacotar como `.app` macOS (distribuição)
 
