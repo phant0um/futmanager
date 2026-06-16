@@ -1,345 +1,345 @@
 ---
-title: FUT BRASIL — Manual de Implantação e Funcionalidades
-projeto: brasfoot (FUT BRASIL)
+title: FUT BRASIL — Deployment and Feature Manual
+project: brasfoot (FUT BRASIL)
 stack: Python 3.12+ · SQLite · PyInstaller
-atualizado: 2026-06-03
+updated: 2026-06-16
 ---
 
-# FUT BRASIL — Manual de Implantação e Funcionalidades
+# FUT BRASIL — Deployment and Feature Manual
 
-> Clone do Brasfoot/Elifoot: gerenciador de futebol por temporadas.
-> Modo carreira: você é o **técnico**, gere o clube, escala, negocia,
-> assiste aos jogos ao vivo, sobrevive à pressão do conselho.
-> Zero dependências em runtime (só stdlib). **Frontend web principal**; GUI compacta Tkinter como fallback offline; empacota como `.app` macOS windowed.
+> Brasfoot/Elifoot clone: a season-based football manager.
+> Career mode: you are the **head coach**, manage the club, set the lineup,
+> watch live matches, survive the board pressure.
+> Zero runtime dependencies (stdlib only). **Web frontend is the default**;
+> compact Tkinter GUI as offline fallback; packs as a windowed macOS `.app`.
 
 ---
 
-## 1. Visão geral
+## 1. Overview
 
-| Item | Valor |
+| Item | Value |
 |------|-------|
-| Linguagem | Python 3.12+ (testado 3.13) |
-| Banco | SQLite (`data/brasfoot.db`, ~1MB) |
-| Deps runtime | **nenhuma** (stdlib pura) |
-| Deps build | `pyinstaller` |
-| Tamanho `.app` | ~8MB |
-| Dados | 9 ligas · 202 clubes · ~5.000 jogadores reais (FC26) |
-| Interface | **Web local (padrão)** · GUI compacta (`--gui`) · CLI (`--cli`) · web sem auto-open (`--web`) |
+| Language | Python 3.12+ (tested on 3.13) |
+| Database | SQLite (`data/brasfoot.db`, ~1MB) |
+| Runtime deps | **none** (pure stdlib) |
+| Build deps | `pyinstaller` |
+| `.app` size | ~8MB |
+| Data | 9 leagues · 202 clubs · ~5,000 real players (FC26) |
+| Interface | **Local web (default)** · compact GUI (`--gui`) · CLI (`--cli`) · web without auto-open (`--web`) |
 
 ---
 
-## 2. Pré-requisitos
+## 2. Prerequisites
 
 ```bash
-python3 --version        # 3.12 ou superior
-git --version            # para baixar dados OpenFootball
+python3 --version        # 3.12 or higher
+git --version            # to download OpenFootball data
 ```
 
-- **Rodar**: só Python 3 (stdlib). Sem pip install.
-- **Empacotar `.app`**: `python3 -m pip install pyinstaller`
-- **Reconstruir database**: git (clona repos OpenFootball)
-- **Atualizar jogadores**: CSV do sofifa.com (FC26) — opcional
+- **Run**: Python 3 only (stdlib). No `pip install`.
+- **Pack `.app`**: `python3 -m pip install pyinstaller`
+- **Rebuild database**: git (clones OpenFootball repos)
+- **Update players**: sofifa.com CSV (FC26) — optional
 
 ---
 
-## 3. Implantação (deployment)
+## 3. Deployment
 
-### 3.1 Rodar direto (desenvolvimento)
+### 3.1 Run directly (development)
 
 ```bash
 cd /Users/michelcsasznik/Dev/projetos/brasfoot
-python3 main.py            # web principal (sobe servidor + abre navegador)
-./jogar.sh                 # atalho para web principal
-python3 main.py --gui      # GUI compacta (Tkinter) — fallback offline
-./jogar_gui.sh             # atalho para GUI compacta
-python3 main.py --cli      # modo terminal
-python3 main.py --web      # servidor web local (http://localhost:8765) sem auto-abrir
+python3 main.py            # main web mode (starts server + opens browser)
+./jogar.sh                 # shortcut to main web mode
+python3 main.py --gui      # compact GUI (Tkinter) — offline fallback
+./jogar_gui.sh             # shortcut to compact GUI
+python3 main.py --cli      # terminal mode
+python3 main.py --web      # local web server (http://localhost:8765) without auto-open
 ```
 
-A database já vem pronta em `data/futmanager.db`. A interface web abre no navegador
-padrão: tela de saves → novo/carregar → hub (Jogar · Elenco · Classificação · Escalação ·
-Mercado · Estádio & CT). A GUI compacta oferece um subconjunto das ações para uso
-offline/leve.
+The database is already bundled in `data/futmanager.db`. The web interface opens in the default
+browser: saves screen → new/load → hub (Play · Squad · Table · Lineup · Market · Stadium & Training).
+The compact GUI offers a subset of actions for offline/light usage.
 
-### 3.2 Empacotar como `.app` macOS (distribuição)
+### 3.2 Package as macOS `.app` (distribution)
 
 ```bash
-python3 -m pip install pyinstaller         # uma vez
-bash scripts/build_app.sh                  # gera dist/FutManager.app (windowed)
-open dist/FutManager.app                   # testa (abre janela GUI, sem terminal)
+python3 -m pip install pyinstaller         # one-time
+bash scripts/build_app.sh                  # builds dist/FutManager.app (windowed)
+open dist/FutManager.app                   # test (opens native GUI window, no terminal)
 ```
 
-- O `.app` é **double-clicável**: abre a janela GUI nativa direto (PyInstaller `BUNDLE`).
-- A DB inicial vai embutida; saves vão para `~/Library/Application Support/FutManager/`
-  (DB do bundle nunca é alterada — cada jogador tem seu save isolado).
-- **Não assinado**: em outro Mac, Gatekeeper bloqueia → botão direito → Abrir (1ª vez).
+- The `.app` is **double-clickable**: opens the native GUI window directly (PyInstaller `BUNDLE`).
+- The initial DB is embedded; saves go to `~/Library/Application Support/FutManager/`.
+  The bundled DB is never modified — each player has an isolated save.
+- **Unsigned**: on another Mac, Gatekeeper blocks → right-click → Open (first time).
 
-### 3.3 Reconstruir a database do zero (pipeline reprodutível)
+### 3.3 Rebuild the database from scratch (reproducible pipeline)
 
 ```bash
 bash scripts/rebuild_db.sh
 ```
 
-Executa o pipeline completo (idempotente):
-1. `import_openfootball.py --all` — clona 9 ligas (estrutura + partidas)
-2. `set_prestige.py` — prestígio dos clubes conhecidos
-3. `seed_top_players.py` — ~200 craques reais com atributos
-4. `data/update.py` — merge do CSV FC26 (sofifa) se presente
-5. `generate_squads.py --min 18` — completa elencos finos
-6. `migrate_career.py` — schema de carreira + ages/valores/salários/estádios
+Runs the full idempotent pipeline:
+1. `import_openfootball.py --all` — clones 9 leagues (structure + fixtures)
+2. `set_prestige.py` — prestige for known clubs
+3. `seed_top_players.py` — ~200 real star players with attributes
+4. `data/update.py` — merges FC26 CSV (sofifa) if present
+5. `generate_squads.py --min 18` — fills squads with depth players
+6. `migrate_career.py` — career schema + ages/values/wages/stadiums
 
-Resultado: `data/brasfoot.db` pristina (sem carreira, sem newgens).
+Result: pristine `data/brasfoot.db` (no career, no newgens).
 
 ---
 
-## 4. Estrutura do projeto
+## 4. Project structure
 
 ```
 brasfoot/
 ├── main.py                  # entry point
-├── paths.py                 # resolve caminhos dev vs bundle (DB gravável)
-├── brasfoot.spec            # config PyInstaller
+├── paths.py                 # resolves dev vs bundle paths (writable DB)
+├── brasfoot.spec            # PyInstaller config
 │
 ├── db/
-│   ├── schema.sql           # schema base (clubes, jogadores, ligas, partidas)
+│   ├── schema.sql           # base schema (clubs, players, leagues, matches)
 │   ├── models.py            # dataclasses Club/Player/Standing/Match
-│   └── migrate_career.py    # migração: carreira, técnicos, escalação, estádio
+│   └── migrate_career.py    # migration: career, coaches, lineup, stadium
 │
-├── engine/                  # motor do jogo (lógica pura)
-│   ├── simulation.py        # simulação de partida (Poisson, sem numpy; moral + estilo)
-│   ├── season.py            # liga round-robin + moral dinâmica
-│   ├── cup.py               # copas (mata-mata, pênaltis)
-│   ├── live.py              # transmissão ao vivo (jogo + rodada)
-│   ├── lineup.py            # formações + escalação + estilo tático
-│   ├── career.py            # virada de temporada: idade, evolução, aposentadoria, newgens, treino
-│   ├── transfer.py          # mercado: compra/venda/empréstimo, negociação, cláusula
-│   ├── finance.py           # receita, folha, CT, multas, bilheteria
-│   ├── manager.py           # reputação do técnico, job security
-│   └── coach.py             # mercado de técnicos (IA + humano)
+├── engine/                  # game engine (pure logic)
+│   ├── simulation.py        # match simulation (Poisson, no numpy; morale + style)
+│   ├── season.py            # league round-robin + dynamic morale
+│   ├── cup.py               # cups (knockout, penalties)
+│   ├── live.py              # live broadcast (match + round)
+│   ├── lineup.py            # formations + lineup + tactical style
+│   ├── career.py            # season turnover: age, evolution, retirement, newgens, training
+│   ├── transfer.py          # market: buy/sell/loan, negotiation, release clause
+│   ├── finance.py           # revenue, payroll, training center, fines, attendance
+│   ├── manager.py           # coach reputation, job security
+│   └── coach.py             # coach market (AI + human)
 │
 ├── ui/
-│   ├── cli.py               # menu principal, partida avulsa, ligas
-│   └── career.py            # modo carreira completo (hub + telas)
+│   ├── cli.py               # main menu, single match, leagues
+│   └── career.py            # full career mode (hub + screens)
 │
 ├── scripts/
-│   ├── rebuild_db.sh        # pipeline completo de reconstrução
+│   ├── rebuild_db.sh        # full rebuild pipeline
 │   ├── import_openfootball.py
 │   ├── set_prestige.py
 │   ├── seed_top_players.py
 │   ├── generate_squads.py
-│   └── build_app.sh         # empacota .app
+│   └── build_app.sh         # pack .app
 │
 └── data/
-    ├── brasfoot.db          # database SQLite (embutida no .app)
-    ├── update.py            # merge FC26 sofifa CSV + atributos gerados
-    └── sources/             # repos OpenFootball + fc26_players.csv (não versionado)
+    ├── brasfoot.db          # SQLite database (embedded in .app)
+    ├── update.py            # merge FC26 sofifa CSV + generate attributes
+    └── sources/             # OpenFootball repos + fc26_players.csv (not versioned)
 ```
 
 ---
 
-## 5. Pipeline de dados
+## 5. Data pipeline
 
 ```
 OpenFootball (git, CC0)  ──┐
-  ligas, clubes, partidas  │
-                           ├──► SQLite ──► jogo
+  leagues, clubs, fixtures │
+                           ├──► SQLite ──► game
 FC26 sofifa (CSV scraper)  │
-  24k jogadores + atributos│
+  24k players + attributes │
                            │
-Gerador algorítmico ───────┘
-  preenche elencos finos
+Algorithmic generator ─────┘
+  fills thin squads
 ```
 
-| Fonte | Fornece | Como |
-|-------|---------|------|
-| OpenFootball | Estrutura de ligas, clubes, partidas reais | `import_openfootball.py` (git clone) |
-| FC26 sofifa | Nomes + atributos reais (~24k jogadores) | scraper JS no browser → `fc26_players.csv` |
-| seed_top_players | ~200 craques com stats afinados à mão | `seed_top_players.py` |
-| gerador | Profundidade de elenco (reservas) | `generate_squads.py` |
+| Source | Provides | How |
+|--------|----------|-----|
+| OpenFootball | League structure, clubs, real fixtures | `import_openfootball.py` (git clone) |
+| FC26 sofifa | Names + real attributes (~24k players) | browser JS scraper → `fc26_players.csv` |
+| seed_top_players | ~200 hand-tuned stars | `seed_top_players.py` |
+| generator | Squad depth (reserves) | `generate_squads.py` |
 
-### Atualizar jogadores (nova temporada FC)
+### Update players (new FC season)
 
-1. No sofifa.com (logado), rodar o scraper JS → baixar `fc26_players.csv`
-2. Salvar em `data/sources/fc26_players.csv`
+1. On sofifa.com (logged in), run the JS scraper → download `fc26_players.csv`
+2. Save it to `data/sources/fc26_players.csv`
 3. `python3 data/update.py --skip-openfootball --skip-top-seed`
-4. `python3 db/migrate_career.py` (recalcula valores/salários)
+4. `python3 db/migrate_career.py` (recalculates values/wages)
 
 ---
 
-## 6. Funções embutidas
+## 6. Built-in features
 
-### 6.1 Menu principal (`ui/cli.py`)
+### 6.1 Main menu (`ui/cli.py`)
 
-| # | Função |
-|---|--------|
-| 1 | **Modo Carreira** (núcleo do jogo) |
-| 2 | Ver ligas disponíveis |
-| 3 | Simular temporada avulsa |
-| 4 | Simular partida rápida (com opção **assistir ao vivo**) |
-| 5 | Ver classificação |
-| 6 | Ver jogadores de um clube |
-| 7 | Atualizar database (dev) |
+| # | Function |
+|---|----------|
+| 1 | **Career mode** (core game) |
+| 2 | View available leagues |
+| 3 | Simulate a standalone season |
+| 4 | Quick match (with optional **live watch**) |
+| 5 | View standings |
+| 6 | View players of a club |
+| 7 | Update database (dev) |
 
-### 6.2 Modo Carreira — hub (`ui/career.py`)
-
-```
-1 Ver elenco          5 🎟️  Estádio & CT
-2 📋 Escalação         6 📊 Classificação
-3 ▶️  Jogar temporada   7 🔍 Buscar time (elencos)
-4 💰 Mercado           8 Scout · 9 Histórico
-```
-
-#### Escalação + tática (`engine/lineup.py`)
-- 7 formações: 4-4-2, 4-3-3, 4-2-3-1, 3-5-2, 5-3-2, 3-4-3, 4-5-1
-- Auto-monta melhor 11 por posição; troca titular ↔ reserva
-- O 11 escalado define os ratings de ataque/defesa na simulação
-- **Estilo tático** `[e]`:
-  - Ofensivo (+12% ataque / −10% defesa) — mais gols pró e contra
-  - Equilibrado — neutro
-  - Defensivo (−14% ataque / +12% defesa) — trava o jogo contra times fortes
-
-#### Jogar temporada (`engine/season.py` + `engine/live.py`)
-- Round-robin ida e volta (38 rodadas / 20 clubes)
-- **Assistir ao vivo**: transmissão da rodada inteira (~2min)
-  - Feed de gols/cartões/contusões de todos os jogos, por minuto
-  - Seu jogo com detalhe extra; placar consolidado + nome do estádio
-  - `[Enter]` assistir · `[p]` só placares · `[s]` simular resto
-- Resultado ao vivo alimenta a classificação
-- **Copas** (após a liga) — `engine/cup.py`:
-  - Copa Nacional (16 clubes da sua liga) + Copa Continental (16 melhores do mundo)
-  - Mata-mata com pênaltis no empate; prêmio €, reputação, títulos
-  - Sua campanha: Oitavas → Quartas → Semi → Final → CAMPEÃO 🏆
-
-#### Estádio & CT (`engine/finance.py` + `engine/career.py`)
-- **Ingresso**: editar preço → muda ocupação (curva de demanda) → muda bilheteria
-- **Centro de Treinamento** (CT): nível 1-5, custo €2.5M×nível/ano
-  - Nível >2 acelera a evolução do seu elenco; <2 economiza
-
-#### Mercado de transferências (`engine/transfer.py`)
-- **Comprar**: filtro por posição/preço; **negociação** (oferta → contraproposta → aceite)
-- **Cláusula de rescisão**: pagar = compra forçada instantânea
-- **Vender**: oferta de clube IA; vender **ídolo** (OVR≥82) custa reputação
-- **Empréstimo IN**: sem taxa, propõe % do salário + taxa mensal; IA aceita se compensa
-- **Empréstimo OUT**: libera salário; jogador volta após 1 temporada
-- Limites de elenco: 16–32 jogadores
-
-#### Estádio e ingressos (`engine/finance.py`)
-- Editar preço do ingresso → muda ocupação (curva de demanda) → muda bilheteria
-- Projeção ao vivo: ocupação % + público + receita anual
-- Existe preço ótimo (caro = vazio, barato = cheio mas pouca grana)
-
-#### Classificação / Buscar time (página de gestão)
-- Classificação completa persistida (P/J/V/E/D/GP/GC/SG), zonas 🟢/🔴, ◀ você
-- Buscar qualquer clube → técnico, estádio, elenco completo, valores
-
-### 6.3 Economia (`engine/finance.py`)
-
-Ao fim de cada temporada:
+### 6.2 Career mode — hub (`ui/career.py`)
 
 ```
-RECEITA = patrocínio/TV (prestígio) + bilheteria (preço×público)
-          + premiação (posição) + bônus título + premiação de copas
-DESPESA = folha salarial + CT + taxas de empréstimo + multas de expulsão
-SALDO   = RECEITA − DESPESA  →  caixa
+1 Squad            5 🎟️  Stadium & Training
+2 📋 Lineup         6 📊 Standings
+3 ▶️  Play season    7 🔍 Search club (squads)
+4 💰 Market         8 Scout · 9 History
 ```
 
-- Caixa negativo = aviso (precisa vender)
-- Salários + CT limitam compras (folha alta = insustentável)
-- Multa por cartão vermelho (4% do salário anual por expulsão)
+#### Lineup + tactics (`engine/lineup.py`)
+- 7 formations: 4-4-2, 4-3-3, 4-2-3-1, 3-5-2, 5-3-2, 3-4-3, 4-5-1
+- Auto-pick best 11 by position; swap starter ↔ reserve
+- The 11 starters define attack/defense ratings for simulation
+- **Tactical style** `[e]`:
+  - Attacking (+12% attack / −10% defense) — more goals for and against
+  - Balanced — neutral
+  - Defensive (−14% attack / +12% defense) — locks down against stronger teams
+- **Squad limits**: 30 players max; bench limited to 12 reserves
 
-### 6.4 Moral (`engine/season.py`)
+#### Play season (`engine/season.py` + `engine/live.py`)
+- Home-and-away round-robin (38 rounds / 20 clubs)
+- **Live watch**: full-round broadcast (~2min)
+  - Goal/card/injury feed for every match, minute-by-minute
+  - Your match with extra detail; final score + stadium name
+  - `[Enter]` watch · `[p]` scores only · `[s]` simulate rest
+- Live results feed the standings
+- **Cups** (after the league) — `engine/cup.py`:
+  - National Cup (16 clubs from your league) + Continental Cup (16 best worldwide)
+  - Knockout with penalties on draw; prize money, reputation, titles
+  - Your campaign: Round of 16 → Quarter → Semi → Final → CHAMPION 🏆
 
-- Cada clube tem **moral 0.85–1.15** que afeta o ataque
-- Vitória sobe a moral, derrota desce; regride à média com o tempo
-- Propaga entre rodadas — boa fase rende mais gols (e o inverso)
+#### Stadium & Training (`engine/finance.py` + `engine/career.py`)
+- **Ticket price**: edit price → changes attendance (demand curve) → changes match-day revenue
+- **Training Center**: level 1-5, cost €2.5M×level/year
+  - Level >2 accelerates your squad's evolution; <2 saves money
 
-### 6.5 Virada de temporada (`engine/career.py`)
+#### Transfer market (`engine/transfer.py`)
+- **Buy**: filter by position/price; **negotiation** (offer → counter-offer → accept)
+- **Release clause**: paying it forces an instant buy
+- **Sell**: AI club offers; selling an **idol** (OVR≥82) costs reputation
+- **Loan IN**: no fee, propose % of wage + monthly fee; AI accepts if it covers costs
+- **Loan OUT**: frees wage; player returns after 1 season
+- Squad limits: 30 players, bench 12
 
-A entressafra processa o mundo inteiro:
-1. **Envelhecimento**: todos +1 ano
-2. **Evolução/regressão**: cresce até 27 (pico) → platô 28-31 → declina de 32
-   (curva por idade × potencial; CT do clube dá bônus de evolução ao seu elenco)
-3. **Aposentadorias**: por idade+posição (GK até 43, linha até 40)
-4. **Newgens**: ~800/temporada no mundo, potencial enviesado (2% wonderkids POT 82-92)
-5. **Contratos**: vencidos auto-renovam (IA); os seus você decide (renovar/liberar)
-6. **Empréstimos**: vencidos retornam ao clube dono
-7. **Valores de mercado** recalculados
+#### Stadium and tickets (`engine/finance.py`)
+- Edit ticket price → changes attendance (demand curve) → changes match-day revenue
+- Live projection: attendance % + crowd + yearly revenue
+- There is an optimal price (expensive = empty, cheap = full but little money)
 
-### 6.6 Carreira do técnico (`engine/manager.py` + `engine/coach.py`)
+#### Standings / Search club (management page)
+- Full persisted standings (P/W/D/L/GF/GA/GD), zones 🟢/🔴, ◀ you
+- Search any club → coach, stadium, full squad, values
 
-- **Você é o técnico** (papel único, não há "gestor" separado)
-- **Reputação 0-100**, varia por:
-  - Campanha vs meta do conselho (±20)
-  - Título (+12), rebaixamento (−15)
-  - Saúde financeira (±)
-  - Vender ídolos (−)
-- **Job security**: reputação <38 = advertência (2 = demissão); <25 = demissão imediata
-- **Mercado de técnicos**: 202 técnicos IA + você, mesma regra
-  - Demitido (IA ou humano) → agente livre → recontratado
-  - **Você demitido recebe ofertas** (escalam com reputação): continua em outro clube ou encerra
-  - Carrossel de técnicos a cada temporada
+### 6.3 Economy (`engine/finance.py`)
+
+At the end of each season:
+
+```
+REVENUE = sponsorship/TV (prestige) + match-day revenue (price × attendance)
+          + prize money (position) + title bonus + cup prizes
+EXPENSE = payroll + training center + loan fees + red-card fines
+BALANCE = REVENUE − EXPENSE  →  cash
+```
+
+- Negative cash = warning (must sell)
+- Wages + training center limit purchases (high payroll = unsustainable)
+- Fine per red card (4% of yearly wage per sending-off)
+
+### 6.4 Morale (`engine/season.py`)
+
+- Each club has **morale 0.85–1.15** that affects attack
+- Wins raise morale, losses lower it; regresses to the mean over time
+- Propagates between rounds — good form yields more goals (and vice versa)
+
+### 6.5 Season turnover (`engine/career.py`)
+
+The off-season processes the whole world:
+1. **Aging**: everyone +1 year
+2. **Evolution/regression**: grows until 27 (peak) → plateau 28-31 → declines from 32
+   (age curve × potential; club training center gives evolution bonus to your squad)
+3. **Retirements**: by age+position (GK up to 43, outfield up to 40)
+4. **Newgens**: ~800/season worldwide, skewed potential (2% wonderkids POT 82-92)
+5. **Contracts**: expired auto-renew (AI); yours you decide (renew/release)
+6. **Loans**: expired return to owner club
+7. **Market values** recalculated
+
+### 6.6 Coach career (`engine/manager.py` + `engine/coach.py`)
+
+- **You are the coach** (single human role, no separate "manager")
+- **Reputation 0-100**, changes by:
+  - Campaign vs. board target (±20)
+  - Title (+12), relegation (−15)
+  - Financial health (±)
+  - Selling idols (−)
+- **Job security**: reputation <38 = warning (2 = sacked); <25 = sacked immediately
+- **Coach market**: 202 AI coaches + you, same rules
+  - Sacked (AI or human) → free agent → rehired
+  - **When you are sacked you receive offers** (scaled by reputation): continue at another club or end
+  - Coach carousel every season
 
 ---
 
-## 7. Fluxo recomendado de uso
+## 7. Recommended usage flow
 
 ```
 1. python3 main.py
-2. Modo Carreira → Nova carreira
-3. Escolher liga + clube + nome do técnico
-4. 📋 Escalação: formação, 11 titulares e estilo tático
-5. 💰 Mercado: reforçar (negociar/cláusula/empréstimo)
-6. 🎟️  Estádio & CT: preço do ingresso + nível de treino
-7. ▶️  Jogar temporada (assistir ao vivo ou simular) + copas
-8. Renovar contratos · ver balanço · reputação
-9. Repetir: construir dinastia sem ser demitido
+2. Career mode → New career
+3. Choose league + club + coach name
+4. 📋 Lineup: formation, 11 starters and tactical style
+5. 💰 Market: strengthen (negotiate/clause/loan)
+6. 🎟️  Stadium & Training: ticket price + training level
+7. ▶️  Play season (live watch or simulate) + cups
+8. Renew contracts · review balance · reputation
+9. Repeat: build a dynasty without getting sacked
 ```
 
 ---
 
-## 8. Esquema do banco (tabelas principais)
+## 8. Database schema (main tables)
 
-| Tabela | Conteúdo |
-|--------|----------|
-| `leagues` / `clubs` / `players` | estrutura + elencos |
-| `countries` | países das ligas |
-| `matches` / `rounds` / `seasons` | partidas e calendário |
-| `career` | save do técnico (clube, ano, caixa, reputação, formação, escalação, tática, CT) |
-| `coaches` | técnicos (IA + humano `is_player=1`) |
-| `season_history` | campeões + colocação por temporada |
-| `league_table` | classificação persistida (tela de tabela) |
-| `transfers` | histórico de transferências |
+| Table | Content |
+|-------|---------|
+| `leagues` / `clubs` / `players` | structure + squads |
+| `countries` | league countries |
+| `matches` / `rounds` / `seasons` | fixtures and calendar |
+| `career` | coach save (club, year, cash, reputation, formation, lineup, tactic, training) |
+| `coaches` | coaches (AI + human `is_player=1`) |
+| `season_history` | champions + final position per season |
+| `league_table` | persisted standings (table screen) |
+| `transfers` | transfer history |
 
-Colunas-chave em `players`: `overall`, `potential`, `age`, `wage`, `contract_until`,
+Key `players` columns: `overall`, `potential`, `age`, `wage`, `contract_until`,
 `value`, `release_clause`, `loan_from_club`, `red_cards`, `is_newgen`, `retired`.
 
-Colunas-chave em `career`: `formation`, `lineup`, `tactic_style`, `training_level`,
-`expectation`, `warnings`. Em `clubs`: `prestige`, `capacity`, `ticket_price`.
+Key `career` columns: `formation`, `lineup`, `tactic_style`, `training_level`,
+`expectation`, `warnings`. In `clubs`: `prestige`, `capacity`, `ticket_price`.
 
 ---
 
 ## 9. Troubleshooting
 
-| Problema | Solução |
-|----------|---------|
-| "Database não encontrada" | `bash scripts/rebuild_db.sh` |
-| `.app` não abre em outro Mac | botão direito → Abrir (Gatekeeper) |
-| Atualizar DB no `.app` | indisponível no bundle; use versão dev |
-| Carreira bugada | save em `~/Library/Application Support/BrasfootClone/`; apagar reinicia |
-| Rebuild lento | `import_openfootball` clona repos (1ª vez ~1min) |
-| Quer dados novos | baixar `fc26_players.csv` → `data/update.py` |
+| Problem | Solution |
+|---------|----------|
+| "Database not found" | `bash scripts/rebuild_db.sh` |
+| `.app` won't open on another Mac | Right-click → Open (Gatekeeper) |
+| Update DB inside `.app` | not available in bundle; use dev version |
+| Broken career | save is in `~/Library/Application Support/BrasfootClone/`; delete to restart |
+| Rebuild is slow | `import_openfootball` clones repos (first run ~1min) |
+| Want new data | download `fc26_players.csv` → `data/update.py` |
 
 ---
 
-## 10. Resumo técnico
+## 10. Technical summary
 
-FUT BRASIL é um gerenciador completo: carreira por temporadas, escalação +
-estilo tático, mercado com negociação/cláusula/empréstimo, economia
-(folha/bilheteria/CT/multas/copas), moral dinâmica, treino, copas nacionais e
-continentais, mundo vivo (evolução pico-27/declínio-32, newgens, aposentadoria),
-mercado de técnicos com job security, e transmissão de partidas ao vivo.
-Tudo em Python stdlib, database SQLite reprodutível via pipeline,
-distribuível como `.app` de 8MB.
+FUT BRASIL is a complete manager: season-based career, lineup + tactical style,
+transfer market with negotiation/clause/loan, economy (payroll/attendance/training/fines/cups),
+dynamic morale, training, national and continental cups, living world (peak-27/decline-32,
+newgens, retirements), coach market with job security, and live match broadcast.
+All in Python stdlib, reproducible SQLite database via pipeline,
+distributable as an 8MB `.app`.
 
-**Para implantar pronto para uso:** `python3 main.py` (dev) ou
-`PyInstaller + build_app.sh` (`.app`). Database já incluída.
+**Ready-to-use deployment:** `python3 main.py` (dev) or
+`PyInstaller + build_app.sh` (`.app`). Database included.
