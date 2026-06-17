@@ -9,8 +9,8 @@ watch the matches live, manage stadium finances and survive the board's pressure
 
 ## Highlights
 
-- **Web frontend (main)** — clean, modern interface that runs in any browser.
-- **Compact offline GUI** (Tkinter) — lightweight fallback when no browser is available.
+- **Web UI (default)** — clean, modern interface that runs in any browser. This is the main way to play.
+- **Compact GUI** (Tkinter) — lightweight offline fallback (`--gui`) when you cannot or do not want to use a browser.
 - **Terminal mode** (`--cli`) — full control via text.
 - **Zero runtime dependencies** — only the Python standard library. Packs as a macOS `.app` (~11 MB).
 - **Full career mode:**
@@ -26,9 +26,9 @@ watch the matches live, manage stadium finances and survive the board's pressure
 
 ```bash
 python3 main.py          # main web mode (starts server + opens browser)
+python3 main.py --web    # web server only (does not auto-open browser)
 python3 main.py --gui    # compact GUI (Tkinter) - offline fallback
 python3 main.py --cli    # terminal mode
-python3 main.py --web    # web server only (does not auto-open browser)
 ```
 
 Or use the ready-made scripts:

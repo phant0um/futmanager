@@ -1469,12 +1469,15 @@ def api_scout_players(c, min_ovr=60, max_ovr=99, position=None, max_price=None,
 
 def _ensure_market_lists(c):
     """Popula listas de transferência/empréstimo dos clubes IA uma vez por mundo
-    (determinístico). Jogadores excedentes ficam à venda; jovens, p/ empréstimo."""
-    has = c.execute("SELECT 1 FROM players WHERE transfer_listed=1 LIMIT 1").fetchone()
-    if has:
-        return
+    (determinístico). Jogadores excedentes ficam à venda; jovens, p/ empréstimo.
+    Ignora jogadores do clube humano — senão listar um próprio jogador bloqueia
+    a população do mercado de IA."""
     car = get_active_career(c)
     mine = car["manager_club_id"] if car else -1
+    has = c.execute("""SELECT 1 FROM players
+        WHERE transfer_listed=1 AND club_id<>? LIMIT 1""", (mine,)).fetchone()
+    if has:
+        return
     c.execute("""UPDATE players SET transfer_listed=1
         WHERE retired=0 AND club_id<>? AND (id % 5)=0""", (mine,))
     c.execute("""UPDATE players SET loan_listed=1

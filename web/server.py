@@ -19,9 +19,10 @@ from gameapi import (conn, api_state, api_squad, api_leagues, api_clubs, api_tab
                      api_next, api_play, create_career, api_saves, save_load, save_delete,
                      api_set_market_status, api_player_detail, api_lineup, save_lineup, auto_lineup_ids,
                      play_round_live, api_finance, api_stadium, save_stadium, api_market,
-                     api_buy, api_player_terms, api_finalize_transfer, api_incoming_offers,
+                     api_buy, api_offer, api_player_terms, api_finalize_transfer, api_incoming_offers,
                      api_respond_offer, api_search_clubs, api_club_squad, api_scout_players,
-                     api_match_history, api_table_by_comp, get_active_career)
+                     api_match_history, api_table_by_comp, get_active_career, api_inbox,
+                     api_inbox_mark_read)
 
 STATIC = Path(__file__).parent / "static"
 PORT = 8765
@@ -88,6 +89,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(api_finance(c))
             if p == "/api/stadium":
                 return self._json(api_stadium(c))
+            if p == "/api/inbox":
+                return self._json(api_inbox(c))
+            if p == "/api/inbox/mark-read":
+                return self._json(api_inbox_mark_read(c, int(q["id"][0]) if q.get("id") else None))
             if p == "/api/market":
                 return self._json(api_market(c, position=q.get("position", [None])[0],
                                             max_price=int(q["max_price"][0]) if q.get("max_price") else None,
@@ -136,6 +141,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(save_stadium(c, body.get("price"), body.get("training"), body.get("focus")))
             finally:
                 c.close()
+        if u.path == "/api/offer":
+            c = conn()
+            try:
+                return self._json(api_offer(c, int(body.get("player_id")), int(body.get("offer"))))
+            finally:
+                c.close()
         if u.path == "/api/market/buy":
             c = conn()
             try:
@@ -151,7 +162,13 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/market/finalize":
             c = conn()
             try:
-                return self._json(api_finalize_transfer(c, int(body.get("player_id")), int(body.get("fee"), int(body.get("wage")))))
+                return self._json(api_finalize_transfer(c, int(body.get("player_id")), int(body.get("fee")), int(body.get("wage"))))
+            finally:
+                c.close()
+        if u.path == "/api/inbox/mark-read":
+            c = conn()
+            try:
+                return self._json(api_inbox_mark_read(c, body.get("id")))
             finally:
                 c.close()
         if u.path == "/api/market/respond":

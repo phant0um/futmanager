@@ -924,26 +924,46 @@ async function renderMarket(panel) {
       <label><input id="mk-sale" type="checkbox"> À venda</label>
       <button id="mk-search" class="btn-primary" style="width:auto;padding:10px 18px">Buscar</button>
     </div>
-    <table id="mk-table">
-      <thead>
-        <tr>
-          <th class="center sortable" data-sort="pos">POS</th>
-          <th class="sortable" data-sort="name">Jogador</th>
-          <th class="sortable" data-sort="club">Clube</th>
-          <th class="center sortable" data-sort="age">Idade</th>
-          <th class="center sortable" data-sort="nat">Nac</th>
-          <th class="center sortable" data-sort="ovr">OVR</th>
-          <th class="center sortable" data-sort="pot">POT</th>
-          <th class="right sortable" data-sort="asking">Valor</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody id="mk-list"></tbody>
-    </table>`;
+    <div id="mk-results"></div>`;
 
   let players = d.players.slice();
   let sortCol = null;
   let sortDir = 1;
+
+  function renderRows() {
+    const box = panel.querySelector("#mk-results");
+    if (!players.length) {
+      box.innerHTML = `<div class="placeholder">Nenhum jogador encontrado com esses filtros.</div>`;
+      return;
+    }
+    box.innerHTML = `
+      <table id="mk-table">
+        <thead>
+          <tr>
+            <th class="center sortable" data-sort="pos">POS</th>
+            <th class="sortable" data-sort="name">Jogador</th>
+            <th class="sortable" data-sort="club">Clube</th>
+            <th class="center sortable" data-sort="age">Idade</th>
+            <th class="center sortable" data-sort="nat">Nac</th>
+            <th class="center sortable" data-sort="ovr">OVR</th>
+            <th class="center sortable" data-sort="pot">POT</th>
+            <th class="right sortable" data-sort="asking">Valor</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="mk-list">${players.map(row).join("")}</tbody>
+      </table>`;
+    bindBuy();
+    box.querySelectorAll("#mk-table th.sortable").forEach(th => {
+      const col = th.dataset.sort;
+      let label = th.dataset.label || th.textContent.replace(/[▲▼]/g, "").trim();
+      if (!th.dataset.label) th.dataset.label = label;
+      th.textContent = label + (sortCol === col ? (sortDir > 0 ? " ▲" : " ▼") : "");
+    });
+    box.querySelectorAll("#mk-table th[data-sort]").forEach(th => {
+      th.onclick = () => sortBy(th.dataset.sort);
+    });
+  }
 
   function row(p) {
     return `<tr>
@@ -959,17 +979,6 @@ async function renderMarket(panel) {
     </tr>`;
   }
 
-  function renderRows() {
-    $("#mk-list").innerHTML = players.map(row).join("");
-    bindBuy();
-    panel.querySelectorAll("#mk-table th.sortable").forEach(th => {
-      const col = th.dataset.sort;
-      let label = th.dataset.label || th.textContent.replace(/[▲▼]/g, "").trim();
-      if (!th.dataset.label) th.dataset.label = label;
-      th.textContent = label + (sortCol === col ? (sortDir > 0 ? " ▲" : " ▼") : "");
-    });
-  }
-
   function sortBy(col) {
     if (sortCol === col) sortDir = -sortDir;
     else { sortCol = col; sortDir = 1; }
@@ -983,11 +992,11 @@ async function renderMarket(panel) {
     renderRows();
   }
 
-  $("#mk-search").onclick = async () => {
-    const pos = $("#mk-pos").value || null;
-    const maxp = $("#mk-price").value ? parseInt($("#mk-price").value) : null;
-    const mino = parseInt($("#mk-ovr").value) || 0;
-    const sale = $("#mk-sale").checked;
+  const doSearch = async () => {
+    const pos = panel.querySelector("#mk-pos").value || null;
+    const maxp = panel.querySelector("#mk-price").value ? parseInt(panel.querySelector("#mk-price").value) : null;
+    const mino = parseInt(panel.querySelector("#mk-ovr").value) || 0;
+    const sale = panel.querySelector("#mk-sale").checked;
     const qs = new URLSearchParams({limit: "100", min_ovr: mino, max_ovr: "99", ...(pos && {position: pos}), ...(maxp && {max_price: maxp}), ...(sale && {only_transfer: "1"})});
     const d2 = await api(`/api/market?${qs}`);
     players = d2.players.slice();
@@ -996,9 +1005,8 @@ async function renderMarket(panel) {
     renderRows();
   };
 
-  panel.querySelectorAll("#mk-table th[data-sort]").forEach(th => {
-    th.onclick = () => sortBy(th.dataset.sort);
-  });
+  panel.querySelector("#mk-search").onclick = doSearch;
+  renderRows();
 
   function bindBuy() {
     panel.querySelectorAll(".mk-buy").forEach(b => {
@@ -1011,7 +1019,6 @@ async function renderMarket(panel) {
       };
     });
   }
-  renderRows();
 }
 
 // ─── Buscar Time ──────────────────────────────────────────────────────────────
@@ -1023,18 +1030,24 @@ async function renderSearchTeam(panel) {
       <button id="st-search" class="btn-primary" style="width:auto;padding:10px 18px">Buscar</button>
     </div>
     <div id="st-results"></div>`;
-  $("#st-search").onclick = async () => {
-    const term = $("#st-term").value;
+  const inp = panel.querySelector("#st-term");
+  const doSearch = async () => {
+    const term = inp.value.trim();
     const d = await api(`/api/search-clubs?term=${encodeURIComponent(term)}`);
-    $("#st-results").innerHTML = d.clubs.map(c => `
+    const box = panel.querySelector("#st-results");
+    if (!d.clubs || d.clubs.length === 0) {
+      box.innerHTML = `<div class="placeholder">Nenhum clube encontrado.</div>`;
+      return;
+    }
+    box.innerHTML = d.clubs.map(c => `
       <div class="res-card club-card" data-id="${c.id}" style="cursor:pointer;margin-bottom:8px">
         <b>${c.name}</b> · prestígio ${c.prestige}
       </div>`).join("");
-    panel.querySelectorAll(".club-card").forEach(el => {
+    box.querySelectorAll(".club-card").forEach(el => {
       el.onclick = async () => {
         const id = parseInt(el.dataset.id);
         const s = await api(`/api/club-squad?id=${id}`);
-        $("#st-results").innerHTML = `
+        box.innerHTML = `
           <h3>${s.club.name} · elenco (${s.count})</h3>
           <div class="squad-list">
             ${s.players.map(p => `
@@ -1048,6 +1061,8 @@ async function renderSearchTeam(panel) {
       };
     });
   };
+  panel.querySelector("#st-search").onclick = doSearch;
+  inp.onkeydown = (e) => { if (e.key === "Enter") doSearch(); };
 }
 
 // ─── Scout ────────────────────────────────────────────────────────────────────
@@ -1125,12 +1140,12 @@ async function renderScout(panel) {
     renderRows();
   }
 
-  $("#sc-search").onclick = async () => {
-    const pos = $("#sc-pos").value || null;
-    const mino = parseInt($("#sc-ovr").value) || 0;
-    const maxo = parseInt($("#sc-maxovr").value) || 99;
-    const maxp = $("#sc-price").value ? parseInt($("#sc-price").value) : null;
-    const maxage = parseInt($("#sc-age").value) || 40;
+  const doSearch = async () => {
+    const pos = panel.querySelector("#sc-pos").value || null;
+    const mino = parseInt(panel.querySelector("#sc-ovr").value) || 0;
+    const maxo = parseInt(panel.querySelector("#sc-maxovr").value) || 99;
+    const maxp = panel.querySelector("#sc-price").value ? parseInt(panel.querySelector("#sc-price").value) : null;
+    const maxage = parseInt(panel.querySelector("#sc-age").value) || 40;
     const qs = new URLSearchParams({limit: "100", min_ovr: mino, max_ovr: maxo, max_age: maxage, ...(pos && {position: pos}), ...(maxp && {max_price: maxp})});
     const d2 = await api(`/api/scout?${qs}`);
     players = d2.players.slice();
@@ -1139,25 +1154,72 @@ async function renderScout(panel) {
     renderRows();
   };
 
-  panel.querySelectorAll("#sc-table th[data-sort]").forEach(th => {
-    th.onclick = () => sortBy(th.dataset.sort);
-  });
+  panel.querySelector("#sc-search").onclick = doSearch;
+  renderRows();
 
   function bindBuy() {
     panel.querySelectorAll(".sc-buy").forEach(b => {
       b.onclick = async () => {
         const id = parseInt(b.dataset.id);
         const asking = parseInt(b.dataset.asking);
-        const r = await api("/api/market/buy", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({player_id: id, price: asking})});
-        alert(r.msg || (r.ok ? "Contratado!" : "Negócio recusado."));
-        if (r.ok) renderScout(panel);
+        const r = await api("/api/offer", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({player_id: id, offer: asking})});
+        if (!r.ok) { alert(r.msg || "Erro na negociação."); return; }
+        if (r.result === "reject") {
+          alert(`❌ Proposta recusada. Pedido: ${r.value_fmt}`);
+          return;
+        }
+        if (r.result === "counter") {
+          const yes = confirm(`🔄 Contraproposta: ${r.value_fmt}. Aceitar?`);
+          if (!yes) return;
+        }
+        const terms = await api("/api/market/terms", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({player_id: id, fee: asking})});
+        if (!terms.ok) { alert(terms.msg || "Erro nos termos."); return; }
+        const yes = confirm(`Contratar?\nTaxa: ${terms.fee_fmt}\nAgente: ${terms.agent_fee_fmt}\nSalário exigido: ${terms.wage_demand_fmt}/ano\nTotal: ${terms.total_cost_fmt}`);
+        if (!yes) return;
+        const fin = await api("/api/market/finalize", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({player_id: id, fee: asking, wage: terms.wage_demand})});
+        alert(fin.msg || (fin.ok ? "Contratado!" : "Falha na contratação."));
+        if (fin.ok) renderScout(panel);
       };
     });
   }
-  renderRows();
 }
 
-// ─── Histórico ─────────────────────────────────────────────────────────────────
+async function renderInbox(panel) {
+  panel.innerHTML = `<h2>📨 Propostas recebidas</h2><div class="placeholder">⏳ Carregando...</div>`;
+  const inbox = await api("/api/inbox");
+  const off = await api("/api/market/offers");
+  let html = `<h2>📨 Propostas recebidas</h2>`;
+  if (off.ok && off.offers.length) {
+    html += `<div class="res-card">${off.offers.map(o => `
+      <div class="squad-row" style="justify-content:space-between">
+        <span><b>${o.player_name}</b> (${o.overall} OVR) → ${o.club_name}</span>
+        <span class="sq-value">${fmtMoney(o.amount)}</span>
+        <div style="display:flex;gap:8px">
+          <button class="btn-primary" style="width:auto;padding:6px 12px;font-size:12px" onclick="respondOffer(${o.player_id}, ${o.club_id}, true)">Aceitar</button>
+          <button style="width:auto;padding:6px 12px;font-size:12px;background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;cursor:pointer" onclick="respondOffer(${o.player_id}, ${o.club_id}, false)">Recusar</button>
+        </div>
+      </div>`).join("")}</div>`;
+  } else {
+    html += `<div class="placeholder">Nenhuma proposta no momento. Coloque jogadores na lista de transferências e avance rodadas.</div>`;
+  }
+  if (inbox.messages && inbox.messages.length) {
+    html += `<h3 style="margin-top:22px">Mensagens</h3><div class="res-card">${inbox.messages.map(m => `
+      <div style="padding:10px 0;border-bottom:1px solid var(--line);${m.read ? '' : 'border-left:3px solid var(--green);padding-left:10px'}">
+        <div style="font-weight:700">${m.title || m.kind_label}</div>
+        <div style="font-size:13px;color:var(--txt-dim)">Rodada ${m.round} · ${m.body || ''}</div>
+      </div>`).join("")}</div>`;
+  }
+  panel.innerHTML = html;
+  await api("/api/inbox/mark-read", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({})});
+}
+
+window.respondOffer = async (player_id, club_id, accept) => {
+  const r = await api("/api/market/respond", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({player_id, club_id, accept})});
+  alert(r.msg || (r.ok ? (accept ? "Proposta aceita!" : "Proposta recusada." ) : "Erro."));
+  const panel = document.querySelector(".panel");
+  if (panel) renderInbox(panel);
+};
+
 async function renderHistory(panel) {
   const d = await api("/api/history");
   if (!d.ok) { panel.innerHTML = `<div class="placeholder">Inicie uma carreira.</div>`; return; }
