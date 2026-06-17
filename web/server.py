@@ -91,6 +91,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(api_stadium(c))
             if p == "/api/inbox":
                 return self._json(api_inbox(c))
+            if p == "/api/market/offers":
+                return self._json({"ok": True, "offers": api_incoming_offers(c)})
             if p == "/api/inbox/mark-read":
                 return self._json(api_inbox_mark_read(c, int(q["id"][0]) if q.get("id") else None))
             if p == "/api/market":

@@ -155,6 +155,31 @@ def loan_fees_expense(conn, club_id: int) -> int:
     return int(sum((r[0] or 0) * 12 for r in rows))
 
 
+def match_revenue(conn, club_id: int, ticket_price: int | None = None) -> int:
+    """Receita de bilheteria de UM jogo em casa, usando campanha atual.
+    Chamado a cada rodada em que o clube do técnico manda o jogo.
+    """
+    from engine import calendar as CAL
+    club = conn.execute("SELECT prestige, capacity, ticket_price, fan_mood, league_id FROM clubs WHERE id=?",
+                        (club_id,)).fetchone()
+    if not club:
+        return 0
+    prestige = club["prestige"] or 60
+    capacity = club["capacity"] or 25_000
+    price = ticket_price if ticket_price is not None else (club["ticket_price"] or base_ticket_price(prestige))
+    fan_mood = club["fan_mood"] if club["fan_mood"] is not None else 50
+    # Posição atual na liga para fator de campanha
+    car = conn.execute("SELECT * FROM career WHERE manager_club_id=? AND status='active' ORDER BY id DESC LIMIT 1",
+                       (club_id,)).fetchone()
+    if car:
+        tab = CAL.standings(conn, dict(car))
+        pos = next((i for i, s in enumerate(tab, 1) if s.club_id == club_id), len(tab))
+        n = len(tab)
+    else:
+        pos, n = 10, 20
+    fill = attendance_fill(prestige, pos, n, price, fan_mood)
+    return int(capacity * fill * price)
+
 def apply_season_finances(conn, career, league_pos: int, n_clubs: int,
                           won_title: bool) -> dict:
     """

@@ -136,6 +136,7 @@ async function loadView(view) {
   if (view === "mercado") return renderMarket(panel);
   if (view === "buscar-time") return renderSearchTeam(panel);
   if (view === "scout") return renderScout(panel);
+  if (view === "inbox") return renderInbox(panel);
   if (view === "historico") return renderHistory(panel);
   panel.innerHTML = `<div class="placeholder">🚧 "${cap(view)}" — em construção no front web.<br>
     Disponível no modo terminal por enquanto.</div>`;
@@ -750,42 +751,12 @@ function renderPlayResult(r) {
 
 async function renderSquad(panel) {
   const sq = await api("/api/squad");
-  const rows = sq.map(p => {
-    const starBadge = p.star_player ? ' <span title="⭐ Estrela do clube">⭐</span>' : '';
-    const potStar = (p.potential && p.potential - p.overall >= 8 && p.age <= 21) ? ' <span class="star" title="Wonderkid">⭐</span>' : '';
-    const loan = p.loan ? ' 🔁' : '';
-    const pot = (p.potential && p.potential > p.overall) ? `<span class="pot">${p.potential}</span>` : '—';
-    let marketBtn = '';
-    if (!p.loan) {
-      const selVal = p.transfer_listed ? 'sale' : (p.loan_listed ? 'loan' : 'none');
-      marketBtn = `<select class="market-sel" data-id="${p.id}" title="Mercado">
-        <option value="none" ${selVal==='none'?'selected':''}>Indisp.</option>
-        <option value="sale" ${selVal==='sale'?'selected':''}>À venda</option>
-        <option value="loan" ${selVal==='loan'?'selected':''}>Empréstimo</option>
-      </select>`;
-    }
-    return `<tr>
-      <td><span class="tag-pos ${p.position}">${p.position}</span></td>
-      <td>${p.name}${starBadge}${potStar}${loan}</td>
-      <td class="center">${p.age}</td>
-      <td class="center ovr">${p.overall}</td>
-      <td class="center">${pot}</td>
-      <td class="right">${p.value_fmt}</td>
-      <td class="right">${p.wage_fmt}</td>
-      <td class="center">${p.contract || '—'}</td>
-      <td>${marketBtn}</td>
-    </tr>`;
-  }).join("");
   const avg = sq.length ? (sq.reduce((a, p) => a + p.overall, 0) / sq.length).toFixed(1) : 0;
   const squadCap = 30;
   const overCap = sq.length > squadCap ? ` <span style="color:var(--c-red)">(EXCEDE LIMITE DE ${squadCap})</span>` : '';
   panel.innerHTML = `
     <h2>Elenco — ${STATE.club.name} <span style="color:var(--txt-dim);font-weight:400">(${sq.length}/${squadCap} jogadores · OVR médio ${avg})${overCap}</span></h2>
-    <table>
-      <thead><tr><th>Pos</th><th>Nome</th><th class="center">Id</th><th class="center">OVR</th>
-        <th class="center">POT</th><th class="right">Valor</th><th class="right">Salário</th><th class="center">Contr.</th><th>Mercado</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
+    ${squadTableHtml(sq, { editableMarket: true })}`;
 
   // Bind selects
   panel.querySelectorAll('.market-sel').forEach(sel => {
@@ -797,10 +768,44 @@ async function renderSquad(panel) {
         e.target.style.borderColor = status==='none' ? '' : '#e3b341';
       } else {
         alert(r.msg || 'Erro');
-        e.target.value = selVal; // revert
+        e.target.value = sel.dataset.val; // revert
       }
     };
   });
+}
+
+function squadTableHtml(sq, { editableMarket=false } = {}) {
+  const rows = sq.map(p => {
+    const starBadge = p.star_player ? ' <span title="⭐ Estrela do clube">⭐</span>' : '';
+    const potStar = (p.potential && p.potential - p.overall >= 8 && p.age <= 21) ? ' <span class="star" title="Wonderkid">⭐</span>' : '';
+    const loan = p.loan ? ' 🔁' : '';
+    const pot = (p.potential && p.potential > p.overall) ? `<span class="pot">${p.potential}</span>` : '—';
+    let marketBtn = '';
+    if (!p.loan) {
+      const selVal = p.transfer_listed ? 'sale' : (p.loan_listed ? 'loan' : 'none');
+      marketBtn = `<select class="market-sel" data-id="${p.id}" data-val="${selVal}" title="Mercado" ${editableMarket ? '' : 'disabled style="opacity:.6;cursor:not-allowed"'}>
+        <option value="none" ${selVal==='none'?'selected':''}>Indisp.</option>
+        <option value="sale" ${selVal==='sale'?'selected':''}>À venda</option>
+        <option value="loan" ${selVal==='loan'?'selected':''}>Empréstimo</option>
+      </select>`;
+    }
+    return `<tr>
+      <td><span class="tag-pos ${p.position || p.pos}">${p.position || p.pos}</span></td>
+      <td>${p.name}${starBadge}${potStar}${loan}</td>
+      <td class="center">${p.age}</td>
+      <td class="center ovr">${p.overall}</td>
+      <td class="center">${pot}</td>
+      <td class="right">${p.value_fmt || p.market_fmt || '—'}</td>
+      <td class="right">${p.wage_fmt || '—'}</td>
+      <td class="center">${p.contract || '—'}</td>
+      <td>${marketBtn}</td>
+    </tr>`;
+  }).join("");
+  return `<table>
+    <thead><tr><th>Pos</th><th>Nome</th><th class="center">Id</th><th class="center">OVR</th>
+      <th class="center">POT</th><th class="right">Valor</th><th class="right">Salário</th><th class="center">Contr.</th><th>Mercado</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
 }
 
 async function renderTable(panel) {
@@ -812,7 +817,7 @@ async function renderTable(panel) {
   const rows = t.rows.map(r => `
     <tr class="${r.is_player ? 'row-player' : ''} ${r.zone === 'cl' ? 'zone-cl' : (r.zone === 'rel' ? 'zone-rel' : '')}">
       <td class="pos-cell">${r.pos}</td>
-      <td><span class="color-bar" style="background:${r.colors.primary}"></span>${r.name}${r.is_player ? ' ◀' : ''}</td>
+      <td><span class="color-bar" style="background:${clubColor(r.name)}"></span>${r.name}${r.is_player ? ' ◀' : ''}</td>
       <td class="center">${r.played}</td><td class="center">${r.wins}</td>
       <td class="center">${r.draws}</td><td class="center">${r.losses}</td>
       <td class="center">${r.gf}</td><td class="center">${r.ga}</td>
@@ -1040,24 +1045,21 @@ async function renderSearchTeam(panel) {
       return;
     }
     box.innerHTML = d.clubs.map(c => `
-      <div class="res-card club-card" data-id="${c.id}" style="cursor:pointer;margin-bottom:8px">
-        <b>${c.name}</b> · prestígio ${c.prestige}
+      <div class="res-card club-card" data-id="${c.id}" style="cursor:pointer;margin-bottom:8px;display:flex;align-items:center;gap:10px">
+        <div style="width:32px;height:32px;border-radius:6px;background:${clubColor(c.name)};display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;color:#fff">${abbr(c.name)}</div>
+        <div><b>${c.name}</b> <div style="font-size:12px;color:var(--txt-dim)">prestígio ${c.prestige}</div></div>
       </div>`).join("");
     box.querySelectorAll(".club-card").forEach(el => {
       el.onclick = async () => {
         const id = parseInt(el.dataset.id);
         const s = await api(`/api/club-squad?id=${id}`);
+        const avg = s.players.length ? (s.players.reduce((a, p) => a + p.ovr, 0) / s.players.length).toFixed(1) : 0;
         box.innerHTML = `
-          <h3>${s.club.name} · elenco (${s.count})</h3>
-          <div class="squad-list">
-            ${s.players.map(p => `
-              <div class="squad-row">
-                <span class="tag-pos ${p.pos}">${p.pos}</span>
-                <span class="sq-name">${p.name} <small>${p.role_label} · ${p.age} anos</small></span>
-                <span class="sq-ovr">OVR ${p.ovr} · POT ${p.pot}</span>
-                <span class="sq-value">${p.value_fmt}</span>
-              </div>`).join("")}
-          </div>`;
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+            <div style="width:44px;height:44px;border-radius:8px;background:${clubColor(s.club.name)};display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff">${abbr(s.club.name)}</div>
+            <div><h3 style="margin:0">${s.club.name}</h3><div style="font-size:13px;color:var(--txt-dim)">prestígio ${s.club.prestige} · ${s.count} jogadores · OVR médio ${avg}</div></div>
+          </div>
+          ${squadTableHtml(s.players.map(p => ({...p, position: p.pos, overall: p.ovr, potential: p.pot, value_fmt: p.value_fmt, wage_fmt: p.wage_fmt, star_player: 0, loan: p.loan_from_club})), { editableMarket: false })}`;
       };
     });
   };
@@ -1193,7 +1195,7 @@ async function renderInbox(panel) {
     html += `<div class="res-card">${off.offers.map(o => `
       <div class="squad-row" style="justify-content:space-between">
         <span><b>${o.player_name}</b> (${o.overall} OVR) → ${o.club_name}</span>
-        <span class="sq-value">${fmtMoney(o.amount)}</span>
+        <span class="sq-value">${o.amount_fmt}</span>
         <div style="display:flex;gap:8px">
           <button class="btn-primary" style="width:auto;padding:6px 12px;font-size:12px" onclick="respondOffer(${o.player_id}, ${o.club_id}, true)">Aceitar</button>
           <button style="width:auto;padding:6px 12px;font-size:12px;background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:6px;cursor:pointer" onclick="respondOffer(${o.player_id}, ${o.club_id}, false)">Recusar</button>

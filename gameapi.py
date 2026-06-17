@@ -538,13 +538,12 @@ STAR_EVERY_ROUNDS = 3  # evolução + tick financeiro a cada 3 rodadas
 
 def _maybe_midseason_tick(conn, career, round_played):
     """
-    Tick de meia-temporada: evolução periódica + finanças semanais.
+    Tick de meia-temporada: evolução periódica dos jogadores.
     Roda a cada STAR_EVERY_ROUNDS rodadas jogadas.
     """
-    from engine.evolution import evolve_players, tick_weekly_finance
+    from engine.evolution import evolve_players
     if round_played > 0 and round_played % STAR_EVERY_ROUNDS == 0:
         evolve_players(conn, round_played, career["season_year"])
-    tick_weekly_finance(conn, career["manager_club_id"])
 
 
 def _assign_stars_on_new_career(conn, career):
@@ -674,6 +673,7 @@ def _web_league_round(conn, career):
         WHERE career_id=? AND season_year=? AND round_idx=? AND played=0""",
         (career["id"], career["season_year"], cr)).fetchall()
     your = None
+    finance_delta = 0
     for f in fxs:
         h, a = by_id[f["home_id"]], by_id[f["away_id"]]
         r = simulate_match(h, a)
@@ -683,6 +683,14 @@ def _web_league_round(conn, career):
         if cid in (h.id, a.id):
             your = {"home": h.name, "hg": r.home_goals, "ag": r.away_goals, "away": a.name}
             CAL._update_player_condition(conn, by_id[cid])
+            if h.id == cid:
+                from engine.finance import match_revenue
+                finance_delta += match_revenue(conn, cid)
+    # Tick financeiro da rodada: salários + bilheteria do jogo em casa
+    from engine.evolution import tick_weekly_finance
+    tick_weekly_finance(conn, cid)
+    if finance_delta:
+        conn.execute("UPDATE career SET money=money+? WHERE id=?", (finance_delta, career["id"]))
     conn.execute("UPDATE career SET current_round=?, updated_at=datetime('now') WHERE id=?",
                  (cr + 1, career["id"]))
     conn.commit()
@@ -746,6 +754,7 @@ def play_round_live(conn):
         (career["id"], career["season_year"], cr)).fetchall()
     from engine import injury as INJ
     matches = []
+    finance_delta = 0
     from engine.stats import record_player_match
     for f in fxs:
         h, a = by_id[f["home_id"]], by_id[f["away_id"]]
@@ -768,8 +777,7 @@ def play_round_live(conn):
                                     club.id, p.id, goals=goals, yellows=yellows, reds=reds)
         if cid in (h.id, a.id):
             CAL._update_player_condition(conn, by_id[cid])
-            # Lesão real só pro elenco do técnico humano (custo/balanço de
-            # gerir 14k+ jogadores de IA não compensa o ganho)
+            # Lesão real só pro elenco do técnico humano
             for inj in res.injuries:
                 if inj["club_id"] == cid and not INJ.active_injury(conn, career["id"], inj["player_id"]):
                     info = INJ.record_injury(conn, career, inj["player_id"], cid, cr + 1)
@@ -780,6 +788,8 @@ def play_round_live(conn):
                                 f"Previsão de recuperação: {info['weeks']} semanas (gravidade {info['severity']}).\n"
                                 f"Condição física caiu {info['fitness_drop']} pontos.",
                                 ref_type="player", ref_id=inj["player_id"])
+            if h.id == cid:
+                finance_delta += match_revenue(conn, cid)
         matches.append(_serialize_match(h, a, res, cid))
     # Recuperação semana a semana — avança 1 rodada = 1 semana
     for rec in INJ.process_recoveries(conn, career):
@@ -788,6 +798,11 @@ def play_round_live(conn):
                     f"✅ Recuperado — {rec['name']}",
                     f"{rec['name']} concluiu a recuperação e está liberado para retornar aos treinos.",
                     ref_type="player", ref_id=rec["player_id"])
+    # Tick financeiro da rodada: salários + bilheteria do jogo em casa
+    from engine.evolution import tick_weekly_finance
+    tick_weekly_finance(conn, cid)
+    if finance_delta:
+        conn.execute("UPDATE career SET money=money+? WHERE id=?", (finance_delta, career["id"]))
     conn.execute("UPDATE career SET current_round=?, updated_at=datetime('now') WHERE id=?",
                  (cr + 1, career["id"]))
     conn.commit()
@@ -1402,7 +1417,8 @@ def api_search_clubs(c, term=""):
 
 def api_club_squad(c, club_id):
     from engine.knowledge import cm_role
-    rows = c.execute("""SELECT id, name, position, age, overall, potential, value, wage
+    rows = c.execute("""SELECT id, name, position, age, overall, potential, value, wage,
+                              contract_until, transfer_listed, loan_listed, loan_from_club
                         FROM players
                         WHERE club_id=? AND retired=0
                         ORDER BY overall DESC""", (club_id,)).fetchall()
@@ -1415,6 +1431,9 @@ def api_club_squad(c, club_id):
             "age": r["age"] or 0, "ovr": r["overall"], "pot": r["potential"],
             "value": r["value"], "value_fmt": fmt_money(r["value"]),
             "wage": r["wage"], "wage_fmt": fmt_money(r["wage"] or 0),
+            "contract": r["contract_until"],
+            "transfer_listed": r["transfer_listed"], "loan_listed": r["loan_listed"],
+            "loan_from_club": r["loan_from_club"] is not None,
         })
     club = c.execute("SELECT name, prestige FROM clubs WHERE id=?", (club_id,)).fetchone()
     return {"ok": True, "club": {"name": club["name"], "prestige": club["prestige"]}, "players": out, "count": len(out)}
